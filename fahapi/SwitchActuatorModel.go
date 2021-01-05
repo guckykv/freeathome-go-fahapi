@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 )
 
 type SwitchActuatorUnit struct {
@@ -67,19 +66,8 @@ func (sau *SwitchActuatorUnit) String() string {
 }
 
 func switchActuatorFactory(deviceId string, device *Device, channelId string) Unit {
-
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	sau := SwitchActuatorUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "AcSwitch",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeSwitchActuator),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

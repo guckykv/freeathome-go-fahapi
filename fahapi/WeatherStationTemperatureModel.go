@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"time"
 )
 
 // change has to be bigger than that
@@ -73,18 +72,8 @@ func (ws *WeatherStationTemperatureUnit) resetChanged() {
 }
 
 func weatherStationTemperatureFactory(deviceId string, device *Device, channelId string) Unit {
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	ws := WeatherStationTemperatureUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeWTemp",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationTemperature),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

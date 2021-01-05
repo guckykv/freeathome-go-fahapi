@@ -70,18 +70,8 @@ func (wds *WindowDoorSensorUnit) String() string {
 }
 
 func windowDoorSensorFactory(deviceId string, device *Device, channelId string) Unit {
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	wds := WindowDoorSensorUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeWindow",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeWindowDoorSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

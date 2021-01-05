@@ -14,6 +14,7 @@ type UnitTypeConst string
 // hydrated data structures
 type UnitData struct {
 	SerialNumber string
+	NativeId     *string
 	ChannelId    string
 	Type         UnitTypeConst
 	Device       *Device
@@ -45,7 +46,11 @@ func (u *UnitData) GetUnitData() *UnitData {
 func (u *UnitData) prtUnitHead() string {
 	var updTimeFormat = "15:04:05"
 	//return fmt.Sprintf("%3s %s@%s: %-40s", u.Type, u.getUnitMapKey(), u.LastUpdate.Format(updTimeFormat), name)
-	return fmt.Sprintf("%s %s: %-11s / %-16s [%-8s] ", u.getUnitMapKey(), u.LastUpdate.Format(updTimeFormat), u.Floor, u.Room, u.Type)
+	nativeId := ""
+	if u.NativeId != nil {
+		nativeId = *u.NativeId // show only 8 chars of the native Id
+	}
+	return fmt.Sprintf("%s %-8s %s: %-11s / %-16s [%-8s] ", u.getUnitMapKey(), nativeId, u.LastUpdate.Format(updTimeFormat), u.Floor, u.Room, u.Type)
 }
 
 func getUnitMapKey(deviceId, channelId string) string {
@@ -104,14 +109,61 @@ func getUnitMapKeysSortedByFloorRoom() []string {
 
 // ####
 
+func GetFloorRoom(device *Device, channel *Channel) (string, string) {
+	var floor, room string
+	var floorId, roomId string
+
+	if channel.Floor != nil {
+		floorId = *channel.Floor
+	} else {
+		if device.Floor != nil {
+			floorId = *device.Floor
+		} else {
+			return "", ""
+		}
+	}
+	if channel.Room != nil {
+		roomId = *channel.Room
+	} else {
+		roomId = *device.Room
+	}
+
+	if floorObject, ok := SysAPConfiguration.Floorplan.Floors[floorId]; ok {
+		floor = *floorObject.Name
+		if roomObject, ok := floorObject.Rooms[roomId]; ok {
+			room = *roomObject.Name
+		} else {
+			room = "-"
+		}
+	}
+
+	return floor, room
+}
+
+func unitDataFactory(deviceId, channelId string, unitType UnitTypeConst) UnitData {
+	device := FreeDevices[deviceId]
+	floor, room := GetFloorRoom(device, device.Channels[channelId])
+
+	return UnitData{
+		SerialNumber: deviceId,
+		NativeId:     device.NativeId,
+		ChannelId:    channelId,
+		Type:         unitType,
+		Device:       device,
+		Floor:        floor,
+		Room:         room,
+		LastUpdate:   time.Now(),
+	}
+}
+
 func hydrateAllDevices(devices map[string]*Device) {
 	UnitMap = make(map[string]Unit, len(devices))
 
 	for deviceId, device := range devices {
-		hydrateDevice(deviceId, device, false)
+		hydrateDevice(deviceId, device)
 	}
 
-	treatAllUnitsAsUpdated(false) // initialy handle all units as updated - e.g. send all to influx
+	treatAllUnitsAsUpdated(false) // initially handle all units as updated - e.g. send all to influx
 }
 
 var countTickRounds = 0
@@ -122,8 +174,10 @@ func treatAllUnitsAsUpdated(forceLogging bool) {
 	} else if logLevel > 0 {
 		logger.Printf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", countTickRounds)
 	}
+
 	keys := getUnitMapKeysSortedByFloorRoom()
 	handleUpdatedUnits(keys, forceLogging || logLevel > 1)
+
 	if logLevel > 1 {
 		logger.Printf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
 	}
@@ -144,7 +198,7 @@ func handleUpdatedUnits(unitKeys []string, printDevices bool) {
 	}
 }
 
-func reHydrateUnitValue(deviceId string, device *Device, channelId string, newData *InOutPut) (string, bool) {
+func reHydrateUnitValue(deviceId string, channelId string, newData *InOutPut) (string, bool) {
 	key := getUnitMapKey(deviceId, channelId)
 	unit := UnitMap[key]
 	if unit == nil {
@@ -158,13 +212,19 @@ func reHydrateUnitValue(deviceId string, device *Device, channelId string, newDa
 	return key, changed
 }
 
-func hydrateDevice(deviceId string, device *Device, hydrateAll bool) {
-	for channelId, _ := range device.Channels {
+func hydrateDevice(deviceId string, device *Device) []string {
+	var newUnitKeys []string
+	newUnitKeys = make([]string, 0, len(device.Channels))
+
+	for channelId := range device.Channels {
 		if unit := hydrateChannel(deviceId, device, channelId); unit != nil {
 			key := unit.getUnitMapKey()
 			UnitMap[key] = unit
+			newUnitKeys = append(newUnitKeys, key)
 		}
 	}
+
+	return newUnitKeys
 }
 
 func hydrateChannel(deviceId string, device *Device, channelId string) Unit {

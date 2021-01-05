@@ -41,4 +41,13 @@ Very first version of a shell command to make all sorts of operations possible v
 
 See [fahcli](https://github.com/guckykv/freeathome-go-tools/cmd/fahcli).
 
+### Limitations
 
+* Works only with SysAP ID `00000000-0000-0000-0000-000000000000`. 
+  So propably it doesn't work, if you have more than one SysAP.
+  
+* VirtualDevices not yet implemented.
+
+* No writing possiblies via the `UnitModel` data structure.
+  If you want to change a value, you have to use `fahapi.PutDatapoint(sysapId, deviceId, channelId, datapointId, value)`.
+  Via WebSocket connection the change will be synced into the `UnitModel` very quickly.

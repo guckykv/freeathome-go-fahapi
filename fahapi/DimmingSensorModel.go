@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"log"
-	"time"
 )
 
 type DimmingSensorUnit struct {
@@ -73,19 +72,8 @@ func (dsu *DimmingSensorUnit) String() string {
 }
 
 func dimmingSensorFactory(deviceId string, device *Device, channelId string) Unit {
-
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	dsu := DimmingSensorUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeDimmin",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeDimmingSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

@@ -112,19 +112,8 @@ func (rtc *RoomTemperatureControllerUnit) String() string {
 }
 
 func roomTemperatureControllerFactory(deviceId string, device *Device, channelId string) Unit {
-
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	rtc := RoomTemperatureControllerUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "CoRoTemp",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeRoomTemperatureController),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

@@ -5,17 +5,10 @@ import (
 	"encoding/base64"
 	json2 "encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
-	"net/url"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
 )
 
 // see https://developer.eu.mybuildings.abb.com/fah_local/reference/functionids/
@@ -62,12 +55,12 @@ type Channel struct {
 }
 
 type Device struct {
-	DisplayName  *string `json:"displayName,omitempty"`
-	Floor        *string `json:"floor,omitempty"`
-	Room         *string `json:"room,omitempty"`
-	Interface    *string `json:"interface,omitempty"`
-	NativeId     *string `json:"nativeId,omitempty"`
-	unresponsive *bool
+	DisplayName  *string             `json:"displayName,omitempty"`
+	Floor        *string             `json:"floor,omitempty"`
+	Room         *string             `json:"room,omitempty"`
+	Interface    *string             `json:"interface,omitempty"`
+	NativeId     *string             `json:"nativeId,omitempty"`
+	Unresponsive *bool               `json:"unresponsive,omitempty"`
 	Channels     map[string]*Channel `json:"channels,omitempty"`
 }
 
@@ -134,14 +127,15 @@ type WebsocketMessage struct {
 	} `json:"00000000-0000-0000-0000-000000000000"`
 }
 
-/*
+type VirtualDeviceProperties struct {
+	Displayname string `json:"displayname,omitempty"`
+	Ttl         string `json:"ttl,omitempty"`
+}
+
 // VirtualDevice defines model for VirtualDevice.
 type VirtualDevice struct {
-	Properties *struct {
-		Displayname *string `json:"displayname,omitempty"`
-		Ttl         *string `json:"ttl,omitempty"`
-	} `json:"properties,omitempty"`
-	Type *VirtualDeviceType `json:"type,omitempty"`
+	Properties VirtualDeviceProperties `json:"properties,omitempty"`
+	Type       VirtualDeviceType       `json:"type,omitempty"`
 }
 
 // VirtualDeviceType defines model for VirtualDeviceType.
@@ -167,12 +161,20 @@ const (
 )
 
 // VirtualDevicesSuccess defines model for VirtualDevicesSuccess.
-type VirtualDevicesSuccess struct {
+/*
+type VirtualDevicesSuccessXXX struct {
 	AdditionalProperties map[string]struct {
 		Devices *VirtualDevicesSuccess_Devices `json:"devices,omitempty"`
 	} `json:"-"`
 }
 */
+type VirtualDevicesSuccess struct {
+	ZeroSysAp struct {
+		Devices map[string]struct {
+			Serial string `json:"serial,omitempty"`
+		} `json:"devices,omitempty"`
+	} `json:"00000000-0000-0000-0000-000000000000"`
+}
 
 // ===============================================================================================
 
@@ -253,6 +255,22 @@ func GetDatapoint(sysap string, deviceId string, channelId string, datapointId s
 	return point, err
 }
 
+func GetConfiguration() (*SysAP, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s", apiConfig.Host, ApiPathPrefix, "/api/rest/configuration")
+	json, err := loadUrl(httpUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	var result ApiRestConfigurationGet200ApplicationJsonResponse
+	err = json2.Unmarshal(json, &result)
+	if err != nil {
+		return nil, err
+	}
+
+	return result.ZeroSysAp, err
+}
+
 func PutDatapoint(sysap string, deviceId string, channelId string, datapointId string, value string) (bool, error) {
 	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s.%s.%s", apiConfig.Host, ApiPathPrefix, "/api/rest/datapoint", sysap, deviceId, channelId, datapointId)
 
@@ -272,20 +290,28 @@ func PutDatapoint(sysap string, deviceId string, channelId string, datapointId s
 	return ok, nil
 }
 
-func GetConfiguration() (*SysAP, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s", apiConfig.Host, ApiPathPrefix, "/api/rest/configuration")
-	json, err := loadUrl(httpUrl)
-	if err != nil {
-		return nil, err
+func PutVirtualDevice(sysap, serial string, message *VirtualDevice) (virtualSerial string, err error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s", apiConfig.Host, ApiPathPrefix, "/api/rest/virtualdevice", sysap, serial)
+
+	var messageString []byte
+	messageString, err = json2.Marshal(message)
+
+	var returnBody []byte
+	if returnBody, err = putRequest(httpUrl, bytes.NewBuffer(messageString)); err != nil {
+		return
 	}
 
-	var result ApiRestConfigurationGet200ApplicationJsonResponse
-	err = json2.Unmarshal(json, &result)
-	if err != nil {
-		return nil, err
+	var result VirtualDevicesSuccess
+	if err = json2.Unmarshal(returnBody, &result); err != nil {
+		return
 	}
 
-	return result.ZeroSysAp, err
+	for virtualSerial, devices := range result.ZeroSysAp.Devices {
+		if devices.Serial == serial {
+			return virtualSerial, nil
+		}
+	}
+	return "", fmt.Errorf("virtual Device PUT returned no device with serial %s (%s)", serial, returnBody)
 }
 
 func loadUrl(httpUrl string) ([]byte, error) {
@@ -306,7 +332,7 @@ func loadUrl(httpUrl string) ([]byte, error) {
 		return nil, err
 	}
 	if response.StatusCode != 200 {
-		return nil, fmt.Errorf("url %s returned code %d (%s)", httpUrl, response.StatusCode, response.Status)
+		return nil, fmt.Errorf("GET url %s returned code %d (%s)", httpUrl, response.StatusCode, response.Status)
 	}
 
 	json, err = ioutil.ReadAll(response.Body)
@@ -327,183 +353,12 @@ func putRequest(url string, data io.Reader) ([]byte, error) {
 		return nil, err
 	}
 
+	if response.StatusCode != 200 {
+		return nil, fmt.Errorf("PUT url %s returned code %d (%s)", url, response.StatusCode, response.Status)
+	}
+
 	var body []byte
 	body, err = ioutil.ReadAll(response.Body)
 
 	return body, err
-}
-
-func GetFloorRoom(device *Device, channel *Channel) (string, string) {
-	var floor, room string
-	var floorId, roomId string
-
-	if channel.Floor != nil {
-		floorId = *channel.Floor
-	} else {
-		if device.Floor != nil {
-			floorId = *device.Floor
-		} else {
-			return "", ""
-		}
-	}
-	if channel.Room != nil {
-		roomId = *channel.Room
-	} else {
-		roomId = *device.Room
-	}
-
-	if floorObject, ok := SysAPConfiguration.Floorplan.Floors[floorId]; ok {
-		floor = *floorObject.Name
-		if roomObject, ok := floorObject.Rooms[roomId]; ok {
-			room = *roomObject.Name
-		} else {
-			room = "-"
-		}
-	}
-
-	return floor, room
-}
-
-func StartWebSocketLoop(refreshTime int) error {
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGHUP)
-
-	u := url.URL{Scheme: "ws", Host: apiConfig.Host, Path: WebSocketPath}
-	if logLevel > 0 {
-		logger.Printf("connecting to %s", u.String())
-	}
-
-	header := http.Header{}
-	header.Set("Authorization", apiConfig.Authentication)
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), header)
-	if err != nil {
-		return err
-	}
-	defer c.Close()
-
-	done := make(chan struct{})
-
-	go func() {
-		defer close(done)
-		for {
-			_, message, err := c.ReadMessage()
-			if err != nil {
-				logger.Printf("read:", err)
-				return
-			}
-			//fmt.Printf("WS message: \n%s\n", message)
-			var result WebsocketMessage
-			err = json2.Unmarshal(message, &result)
-			if err != nil {
-				logger.Printf("WS unmarshall error: %s\n", err)
-			} else {
-				processWebsocketMessage(result)
-			}
-		}
-	}()
-
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-
-	ticks := 0
-
-	for {
-		select {
-		case <-done:
-			return nil
-		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
-			if err != nil {
-				logger.Println("ticker write:", err)
-				return err
-			}
-			ticks++
-			if ticks > refreshTime {
-				ticks = 0
-				// todo Maybe we should also refresh the whole UnitMap structure (re read the f@h configuration)
-				treatAllUnitsAsUpdated(false) // regulary flush all units
-			}
-		case sig := <-interrupt:
-			logger.Println("interrupt", sig)
-
-			if sig.String() == "hangup" {
-				treatAllUnitsAsUpdated(true)
-			} else {
-				// Cleanly close the connection by sending a close message and then
-				// waiting (with timeout) for the server to close the connection.
-				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				if err != nil {
-					logger.Println("write close:", err)
-					return err
-				}
-				select {
-				case <-done:
-				case <-time.After(time.Second):
-				}
-				return nil
-			}
-		}
-	}
-}
-
-func processWebsocketMessage(message WebsocketMessage) {
-
-	changedKeys := updateDevices(message)
-	if len(changedKeys) > 0 {
-		handleUpdatedUnits(changedKeys, logLevel > 0)
-	}
-}
-
-func updateDevices(message WebsocketMessage) []string {
-	changedMap := make(map[string]bool)
-
-	for updDatapoint, updValue := range message.ZeroSysAp.Datapoints {
-		split := strings.Split(updDatapoint, "/")
-		if len(split) != 3 {
-			logger.Fatalf("illegal message %x: illegal datapoint format %s", message, updDatapoint)
-		}
-		deviceId := split[0]
-		channelId := split[1]
-		outDatapointId := split[2]
-
-		var device *Device
-		var channel *Channel
-		var outPoint *InOutPut
-		var ok bool
-
-		if device, ok = FreeDevices[deviceId]; !ok {
-			//fmt.Printf("updateDevices: No device %s in total device list\n", deviceId)
-			continue
-		}
-		if channel, ok = device.Channels[channelId]; !ok {
-			//fmt.Printf("updateDevices: No channel %s for device %s\n", channelId, deviceId)
-			continue
-		}
-		if outPoint, ok = channel.Outputs[outDatapointId]; !ok {
-			//fmt.Printf("updateDevices: No out datapoint %s for device %s and channel %d\n", outDatapointId, deviceId, channelId)
-			continue
-		}
-
-		// 1) update the value in our device data structure
-		updateDeviceDatapoint(outPoint, updValue)
-
-		// 2) update the corresponding unit data structures
-		key, changed := reHydrateUnitValue(deviceId, device, channelId, outPoint)
-
-		if changed {
-			changedMap[key] = true
-		}
-	}
-
-	// unique list of all changed device.channel combinations
-	changedKeys := make([]string, 0, len(changedMap))
-	for k := range changedMap {
-		changedKeys = append(changedKeys, k)
-	}
-
-	return changedKeys
-}
-
-func updateDeviceDatapoint(data *InOutPut, updValue string) {
-	data.Value = &updValue
 }

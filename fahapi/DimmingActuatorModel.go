@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"time"
 )
 
 type DimmingActuatorUnit struct {
@@ -78,19 +77,8 @@ func (dau *DimmingActuatorUnit) String() string {
 }
 
 func dimmingActuatorFactory(deviceId string, device *Device, channelId string) Unit {
-
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	dau := DimmingActuatorUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         UntTypeDimmingActuator,
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeDimmingActuator),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

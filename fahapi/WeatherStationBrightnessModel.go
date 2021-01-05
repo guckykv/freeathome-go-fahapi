@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"time"
 )
 
 const luminanceLevel = 0.02 // change has to be bigger than that: logarithm change of lux
@@ -68,18 +67,8 @@ func (ws *WeatherStationBrightnessUnit) resetChanged() {
 }
 
 func weatherStationBrightnessFactory(deviceId string, device *Device, channelId string) Unit {
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	ws := WeatherStationBrightnessUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeWBrig",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationBrightness),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

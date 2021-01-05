@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"strconv"
-	"time"
 )
 
 const rainLevel = 2 // rain percentage change has to be bigger than that
@@ -68,18 +67,8 @@ func (ws *WeatherStationRainUnit) resetChanged() {
 }
 
 func weatherStationRainFactory(deviceId string, device *Device, channelId string) Unit {
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	ws := WeatherStationRainUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeWRain",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationRain),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

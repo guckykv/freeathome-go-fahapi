@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"time"
 )
 
 type WeatherStationWindUnit struct {
@@ -74,18 +73,8 @@ func (ws *WeatherStationWindUnit) resetChanged() {
 }
 
 func weatherStationWindFactory(deviceId string, device *Device, channelId string) Unit {
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	ws := WeatherStationWindUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeWWind",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationWind),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

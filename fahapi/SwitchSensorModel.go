@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"log"
-	"time"
 )
 
 type SwitchSensorUnit struct {
@@ -73,19 +72,8 @@ func (ssu *SwitchSensorUnit) String() string {
 }
 
 func switchSensorFactory(deviceId string, device *Device, channelId string) Unit {
-
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
-
 	wds := SwitchSensorUnit{
-		UnitData: UnitData{
-			SerialNumber: deviceId,
-			ChannelId:    channelId,
-			Type:         "SeSwitch",
-			Device:       device,
-			Floor:        floor,
-			Room:         room,
-			LastUpdate:   time.Now(),
-		},
+		UnitData: unitDataFactory(deviceId, channelId, UntTypeSwitchSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
