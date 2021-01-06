@@ -46,7 +46,9 @@ See [fahcli](https://github.com/guckykv/freeathome-go-tools/cmd/fahcli).
 * Works only with SysAP ID `00000000-0000-0000-0000-000000000000`. 
   So propably it doesn't work, if you have more than one SysAP.
   
-* VirtualDevices not yet implemented.
+* ~~VirtualDevices not yet implemented.~~
+  PUT call for creating virtual devices is implemented. And the standard Unit logging now shows the NativeId too.
+  The fhapi also supports, that new devices show up while the websocket loop already runs.
 
 * No writing possiblies via the `UnitModel` data structure.
   If you want to change a value, you have to use `fahapi.PutDatapoint(sysapId, deviceId, channelId, datapointId, value)`.
