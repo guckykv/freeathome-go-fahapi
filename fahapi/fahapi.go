@@ -181,9 +181,11 @@ type VirtualDevicesSuccess struct {
 const ApiPathPrefix string = "/fhapi/v1"
 const WebSocketPath string = "/fhapi/v1/api/ws"
 
-type WebsocketUpdateCallbackFunc func(unitKeys []string)
+type WebsocketUpdateUnitCallbackFunc func(unitKeys []string)
+type WebsocketUpdateMessageCallbackFunc func(message WebsocketMessage)
 
-var wsUpdateCallback WebsocketUpdateCallbackFunc
+var wsUpdateUnitCallback WebsocketUpdateUnitCallbackFunc
+var wsUpdateMessageCallback WebsocketUpdateMessageCallbackFunc
 
 var FreeDevices map[string]*Device
 var SysAPConfiguration *SysAP
@@ -197,10 +199,19 @@ type apiConfiguration struct {
 
 var apiConfig = apiConfiguration{}
 
-func ConfigureApi(host string, username string, password string, callback WebsocketUpdateCallbackFunc, loggerParam *log.Logger, logLevelParam int) {
+func ConfigureApi(
+	host string,
+	username string,
+	password string,
+	callbackUnit WebsocketUpdateUnitCallbackFunc,
+	callbackMessage WebsocketUpdateMessageCallbackFunc,
+	loggerParam *log.Logger,
+	logLevelParam int,
+) {
 	apiConfig.Host = host
 	apiConfig.Authentication = "Basic: " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
-	wsUpdateCallback = callback
+	wsUpdateUnitCallback = callbackUnit
+	wsUpdateMessageCallback = callbackMessage
 	logger = loggerParam
 	logLevel = logLevelParam
 }

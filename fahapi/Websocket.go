@@ -40,7 +40,9 @@ func StartWebSocketLoop(refreshTime int) error {
 				logger.Printf("read:", err)
 				return
 			}
-			//fmt.Printf("WS message: \n%s\n", message)
+			if logLevel == 3 { // debug out
+				fmt.Printf("%s\n", message)
+			}
 			var result WebsocketMessage
 			err = json2.Unmarshal(message, &result)
 			if err != nil {
@@ -96,6 +98,10 @@ func StartWebSocketLoop(refreshTime int) error {
 }
 
 func processWebsocketMessage(message WebsocketMessage) {
+	if wsUpdateMessageCallback != nil {
+		wsUpdateMessageCallback(message) // tell someone about the new message
+	}
+
 	changedKeys := updateDevices(message)
 	if len(changedKeys) > 0 {
 		handleUpdatedUnits(changedKeys, logLevel > 0)

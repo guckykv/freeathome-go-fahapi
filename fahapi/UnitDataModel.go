@@ -185,8 +185,8 @@ func treatAllUnitsAsUpdated(forceLogging bool) {
 }
 
 func handleUpdatedUnits(unitKeys []string, printDevices bool) {
-	if wsUpdateCallback != nil {
-		wsUpdateCallback(unitKeys) // tell someone what has changed
+	if wsUpdateUnitCallback != nil {
+		wsUpdateUnitCallback(unitKeys) // tell someone what has changed
 	}
 
 	for _, key := range unitKeys {
