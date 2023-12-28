@@ -209,7 +209,7 @@ func ConfigureApi(
 	logLevelParam int,
 ) {
 	apiConfig.Host = host
-	apiConfig.Authentication = "Basic: " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	apiConfig.Authentication = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	wsUpdateUnitCallback = callbackUnit
 	wsUpdateMessageCallback = callbackMessage
 	logger = loggerParam
