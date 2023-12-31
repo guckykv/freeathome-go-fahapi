@@ -18,6 +18,7 @@ const (
 	FID_SWITCH_SENSOR                                  FunctionIdType = "0"
 	FID_DIMMING_SENSOR                                 FunctionIdType = "1"
 	FID_SWITCH_ACTUATOR                                FunctionIdType = "7"
+	FID_SHUTTER_ACTUATOR                               FunctionIdType = "9"
 	FID_DIMMING_ACTUATOR                               FunctionIdType = "12"
 	FID_WINDOW_DOOR_SENSOR                             FunctionIdType = "f"
 	FID_ROOM_TEMPERATURE_CONTROLLER_MASTER_WITHOUT_FAN FunctionIdType = "23"
@@ -25,6 +26,8 @@ const (
 	FID_RAIN_SENSOR                                    FunctionIdType = "42"
 	FID_TEMPERATURE_SENSOR                             FunctionIdType = "43"
 	FID_WIND_SENSOR                                    FunctionIdType = "44"
+	FID_BLIND_ACTUATOR                                 FunctionIdType = "61"
+	FID_AWNING_ACTUATOR                                FunctionIdType = "63"
 )
 
 type ApiRestConfigurationGet200ApplicationJsonResponse struct {

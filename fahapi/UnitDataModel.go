@@ -259,6 +259,15 @@ func hydrateChannel(deviceId string, device *Device, channelId string) Unit {
 	case FID_WIND_SENSOR:
 		return weatherStationWindFactory(deviceId, device, channelId)
 
+	case FID_BLIND_ACTUATOR:
+		return blindActuatorFactory(deviceId, device, channelId)
+
+	case FID_SHUTTER_ACTUATOR:
+		return shutterActuatorFactory(deviceId, device, channelId)
+
+	case FID_AWNING_ACTUATOR:
+		return awningActuatorFactory(deviceId, device, channelId)
+
 	}
 
 	return nil
