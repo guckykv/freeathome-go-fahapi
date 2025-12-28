@@ -13,6 +13,7 @@ Currently supported Device Types (FunctionIDs):
 * FID_SWITCH_SENSOR                                  
 * FID_DIMMING_SENSOR                                 
 * FID_SWITCH_ACTUATOR                                
+* FID_SHUTTER_ACTUATOR
 * FID_DIMMING_ACTUATOR                               
 * FID_WINDOW_DOOR_SENSOR                             
 * FID_ROOM_TEMPERATURE_CONTROLLER_MASTER_WITHOUT_FAN 
@@ -20,6 +21,8 @@ Currently supported Device Types (FunctionIDs):
 * FID_RAIN_SENSOR                                    
 * FID_TEMPERATURE_SENSOR                             
 * FID_WIND_SENSOR                                    
+* FID_BLIND_ACTUATOR
+* FID_AWNING_ACTUATOR
 
 You can use a CallBack function to get a message for all updates (for the supported types).
 

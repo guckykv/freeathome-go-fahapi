@@ -170,7 +170,7 @@ var countTickRounds = 0
 
 func treatAllUnitsAsUpdated(forceLogging bool) {
 	if forceLogging || logLevel > 1 {
-		logger.Printf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
+		logger.Printf("------- BEGIN TREAT AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
 	} else if logLevel > 0 {
 		logger.Printf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", countTickRounds)
 	}
@@ -179,7 +179,7 @@ func treatAllUnitsAsUpdated(forceLogging bool) {
 	handleUpdatedUnits(keys, forceLogging || logLevel > 1)
 
 	if logLevel > 1 {
-		logger.Printf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
+		logger.Printf("------- END TREAT AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
 	}
 	countTickRounds++
 }
@@ -192,7 +192,7 @@ func handleUpdatedUnits(unitKeys []string, printDevices bool) {
 	for _, key := range unitKeys {
 		unit := UnitMap[key]
 		if printDevices {
-			logger.Printf("%s\n", unit)
+			logger.Printf("[handleUpdatedUnits]%s\n", unit)
 		}
 		unit.resetChanged()
 	}
@@ -258,6 +258,15 @@ func hydrateChannel(deviceId string, device *Device, channelId string) Unit {
 
 	case FID_WIND_SENSOR:
 		return weatherStationWindFactory(deviceId, device, channelId)
+
+	case FID_BLIND_ACTUATOR:
+		return blindActuatorFactory(deviceId, device, channelId)
+
+	case FID_SHUTTER_ACTUATOR:
+		return shutterActuatorFactory(deviceId, device, channelId)
+
+	case FID_AWNING_ACTUATOR:
+		return awningActuatorFactory(deviceId, device, channelId)
 
 	}
 

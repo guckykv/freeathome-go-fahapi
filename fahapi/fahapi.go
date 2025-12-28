@@ -18,6 +18,7 @@ const (
 	FID_SWITCH_SENSOR                                  FunctionIdType = "0"
 	FID_DIMMING_SENSOR                                 FunctionIdType = "1"
 	FID_SWITCH_ACTUATOR                                FunctionIdType = "7"
+	FID_SHUTTER_ACTUATOR                               FunctionIdType = "9"
 	FID_DIMMING_ACTUATOR                               FunctionIdType = "12"
 	FID_WINDOW_DOOR_SENSOR                             FunctionIdType = "f"
 	FID_ROOM_TEMPERATURE_CONTROLLER_MASTER_WITHOUT_FAN FunctionIdType = "23"
@@ -25,6 +26,8 @@ const (
 	FID_RAIN_SENSOR                                    FunctionIdType = "42"
 	FID_TEMPERATURE_SENSOR                             FunctionIdType = "43"
 	FID_WIND_SENSOR                                    FunctionIdType = "44"
+	FID_BLIND_ACTUATOR                                 FunctionIdType = "61"
+	FID_AWNING_ACTUATOR                                FunctionIdType = "63"
 )
 
 type ApiRestConfigurationGet200ApplicationJsonResponse struct {
@@ -209,14 +212,14 @@ func ConfigureApi(
 	logLevelParam int,
 ) {
 	apiConfig.Host = host
-	apiConfig.Authentication = "Basic: " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	apiConfig.Authentication = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	wsUpdateUnitCallback = callbackUnit
 	wsUpdateMessageCallback = callbackMessage
 	logger = loggerParam
 	logLevel = logLevelParam
 }
 
-func ReadAndHydradteAllDevices() {
+func ReadAndHydrateAllDevices() {
 	configResult, err := GetConfiguration()
 	if err != nil {
 		logger.Fatalf("can't initialize f@h api: %s", err)
@@ -266,6 +269,9 @@ func GetDatapoint(sysap string, deviceId string, channelId string, datapointId s
 	return point, err
 }
 
+// GetConfiguration reads the SysAP configuration and returns it as data structure.
+// The configuration consists of the SysAP name, serial number, etc., a list of
+// devices and a list of users.
 func GetConfiguration() (*SysAP, error) {
 	httpUrl := fmt.Sprintf("http://%s%s%s", apiConfig.Host, ApiPathPrefix, "/api/rest/configuration")
 	json, err := loadUrl(httpUrl)

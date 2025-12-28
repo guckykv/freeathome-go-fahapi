@@ -1,9 +1,9 @@
 package fahapi
 
 import (
+	"context"
 	json2 "encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
 	"os"
@@ -11,12 +11,19 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
+// StartWebSocketLoop öffnet einen Websocket, startet eine go-Routine zum lesen
+// von Events und aktualisiert in einer Schleife alle Devices.
+// Es wird ein Websocket ohne TLS geöffnet mit Basic Auth.
+// Die 
 func StartWebSocketLoop(refreshTime int) error {
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGHUP)
 
+	// 1. URL und Header vorbereiten
 	u := url.URL{Scheme: "ws", Host: apiConfig.Host, Path: WebSocketPath}
 	if logLevel > 0 {
 		logger.Printf("connecting to %s", u.String())
@@ -24,22 +31,50 @@ func StartWebSocketLoop(refreshTime int) error {
 
 	header := http.Header{}
 	header.Set("Authorization", apiConfig.Authentication)
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), header)
+	// Origin beibehalten, da es oft bei lokalen APIs benötigt wird
+	header.Set("Origin", "http://"+strings.Split(apiConfig.Host, ":")[0])
+
+	// 2. Lokalen Dialer erstellen und konfigurieren
+	// Dies vermeidet Race Conditions durch die Modifikation des DefaultDialer
+	dialer := &websocket.Dialer{
+		HandshakeTimeout: 10 * time.Second,
+		// Sub-Protokoll hinzufügen (oftmals 'fhapi' bei free@home)
+		Subprotocols: []string{"fhapi"},
+	}
+
+	// 3. Verbindung aufbauen
+	// Verwenden Sie DialContext, um den Kontext für Timeouts zu nutzen
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	c, _, err := dialer.DialContext(ctx, u.String(), header)
+
 	if err != nil {
-		return err
+		return fmt.Errorf("WebSocket Dial failed: %w", err)
 	}
 	defer c.Close()
 
+	// 4. Ersten Ping (Keep-Alive) sofort senden
+	// Dies verhindert Timeouts, falls der Server sofortigen Heartbeat erwartet
+	err = c.WriteMessage(websocket.PingMessage, nil)
+	if err != nil {
+		logger.Println("initial write ping failed:", err)
+		return err
+	}
+
 	done := make(chan struct{})
 
+	// Go-Routine für das Lesen von Nachrichten
 	go func() {
 		defer close(done)
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				logger.Printf("read:", err)
+				logger.Printf("read error: %v", err)
 				return
 			}
+
+			// ... (Restliche Verarbeitungslogik)
 			if logLevel == 3 { // debug out
 				fmt.Printf("%s\n", message)
 			}
@@ -62,16 +97,17 @@ func StartWebSocketLoop(refreshTime int) error {
 		select {
 		case <-done:
 			return nil
-		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
+		case <-ticker.C:
+			// 5. Ping-Nachricht als Keep-Alive senden
+			// Dies ist der korrekte Weg, den WebSocket-Heartbeat zu implementieren
+			err := c.WriteMessage(websocket.PingMessage, nil)
 			if err != nil {
-				logger.Println("ticker write:", err)
+				logger.Println("ticker write failed:", err)
 				return err
 			}
 			ticks++
 			if ticks > refreshTime {
 				ticks = 0
-				// todo Maybe we should also refresh the whole UnitMap structure (re read the f@h configuration)
 				treatAllUnitsAsUpdated(false) // regulary flush all units
 			}
 		case sig := <-interrupt:
@@ -80,8 +116,7 @@ func StartWebSocketLoop(refreshTime int) error {
 			if sig.String() == "hangup" {
 				treatAllUnitsAsUpdated(true)
 			} else {
-				// Cleanly close the connection by sending a close message and then
-				// waiting (with timeout) for the server to close the connection.
+				// Sauberes Schliessen
 				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				if err != nil {
 					logger.Println("write close:", err)
@@ -98,7 +133,9 @@ func StartWebSocketLoop(refreshTime int) error {
 }
 
 func processWebsocketMessage(message WebsocketMessage) {
+	logger.Println("[processWebsocketMessage]") // roac
 	if wsUpdateMessageCallback != nil {
+		logger.Println("[wsUpdateMessageCallback]") // roac
 		wsUpdateMessageCallback(message) // tell someone about the new message
 	}
 
