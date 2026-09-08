@@ -227,6 +227,12 @@ func hydrateAllDevices(devices map[string]*Device) {
 
 var countTickRounds = 0
 
+// TreatAllUnitsAsUpdated reports every unit as updated even though nothing
+// changed. Applications use this to force a full flush, typically on SIGHUP.
+func TreatAllUnitsAsUpdated(forceLogging bool) {
+	treatAllUnitsAsUpdated(forceLogging)
+}
+
 func treatAllUnitsAsUpdated(forceLogging bool) {
 	if forceLogging || logLevel > 1 {
 		logf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)

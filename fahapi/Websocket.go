@@ -1,98 +1,166 @@
 package fahapi
 
 import (
+	"context"
 	json2 "encoding/json"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-func StartWebSocketLoop(refreshTime int) error {
-	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGHUP)
+const (
+	// pingInterval is how often a ping goes out; pongWait is how long a
+	// connection may stay silent before it counts as dead. pongWait must be
+	// comfortably larger than pingInterval.
+	pingInterval = 20 * time.Second
+	pongWait     = 60 * time.Second
+	writeWait    = 10 * time.Second
 
+	// DefaultDialer would wait 45s for a handshake, which delays noticing a
+	// blackholed host far longer than necessary.
+	handshakeTimeout = 10 * time.Second
+
+	reconnectMin = 1 * time.Second
+	reconnectMax = 60 * time.Second
+	// A connection that survived this long is treated as healthy, so the
+	// backoff starts over after it drops.
+	connectionStable = 2 * time.Minute
+)
+
+var wsDialer = &websocket.Dialer{
+	Proxy:            http.ProxyFromEnvironment,
+	HandshakeTimeout: handshakeTimeout,
+}
+
+// StartWebSocketLoop keeps a websocket connection to the SysAP open and applies
+// every update to the Unit model. It reconnects with a backoff until ctx is
+// cancelled, and returns nil on that cancellation.
+//
+// refreshTime is the interval in seconds at which all units are reported as
+// updated even when nothing changed.
+func StartWebSocketLoop(ctx context.Context, refreshTime int) error {
+	backoff := reconnectMin
+
+	for {
+		start := time.Now()
+		err := runWebSocket(ctx, refreshTime)
+
+		if ctx.Err() != nil {
+			return nil
+		}
+		if time.Since(start) >= connectionStable {
+			backoff = reconnectMin
+		}
+
+		logf("websocket connection lost (%v), reconnecting in %s\n", err, backoff)
+
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(backoff):
+		}
+
+		if backoff *= 2; backoff > reconnectMax {
+			backoff = reconnectMax
+		}
+	}
+}
+
+// runWebSocket serves one connection and returns as soon as it fails.
+//
+// The reader goroutine only receives frames; every change to FreeDevices and
+// UnitMap happens in the loop below. That keeps the model in a single
+// goroutine, which the previous version did not: it applied updates from the
+// reader while the ticker path walked the same maps.
+func runWebSocket(ctx context.Context, refreshTime int) error {
 	u := url.URL{Scheme: "ws", Host: apiConfig.Host, Path: WebSocketPath}
 	if logLevel > 0 {
-		logf("connecting to %s", u.String())
+		logf("connecting to %s\n", u.String())
 	}
 
 	header := http.Header{}
 	header.Set("Authorization", apiConfig.Authentication)
-	c, _, err := websocket.DefaultDialer.Dial(u.String(), header)
+
+	c, _, err := wsDialer.DialContext(ctx, u.String(), header)
 	if err != nil {
 		return err
 	}
 	defer c.Close()
 
-	done := make(chan struct{})
+	// Without a read deadline a half-open connection -- an access point reboot,
+	// a dropped wifi link -- blocks ReadMessage forever: the process keeps
+	// running but never receives another update. Every pong pushes it out.
+	if err := c.SetReadDeadline(time.Now().Add(pongWait)); err != nil {
+		return err
+	}
+	c.SetPongHandler(func(string) error {
+		return c.SetReadDeadline(time.Now().Add(pongWait))
+	})
+
+	messages := make(chan []byte, 16)
+	readErr := make(chan error, 1)
 
 	go func() {
-		defer close(done)
+		defer close(messages)
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				logf("websocket read: %v", err)
+				readErr <- err
 				return
 			}
-			if logLevel == 3 { // debug out
-				fmt.Printf("%s\n", message)
-			}
-			var result WebsocketMessage
-			err = json2.Unmarshal(message, &result)
-			if err != nil {
-				logf("WS unmarshall error: %s\n", err)
-			} else {
-				processWebsocketMessage(result)
+			select {
+			case messages <- message:
+			case <-ctx.Done():
+				return
 			}
 		}
 	}()
 
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
+	ping := time.NewTicker(pingInterval)
+	defer ping.Stop()
 
-	ticks := 0
+	refresh := time.NewTicker(time.Duration(refreshTime) * time.Second)
+	defer refresh.Stop()
 
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
+			// Close politely and give the peer a moment to answer.
+			_ = c.SetWriteDeadline(time.Now().Add(writeWait))
+			_ = c.WriteMessage(websocket.CloseMessage,
+				websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+			select {
+			case <-readErr:
+			case <-time.After(time.Second):
+			}
 			return nil
-		case t := <-ticker.C:
-			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
-			if err != nil {
-				logf("ticker write: %v\n", err)
-				return err
-			}
-			ticks++
-			if ticks > refreshTime {
-				ticks = 0
-				// todo Maybe we should also refresh the whole UnitMap structure (re read the f@h configuration)
-				treatAllUnitsAsUpdated(false) // regulary flush all units
-			}
-		case sig := <-interrupt:
-			logf("interrupt: %v\n", sig)
 
-			if sig.String() == "hangup" {
-				treatAllUnitsAsUpdated(true)
-			} else {
-				// Cleanly close the connection by sending a close message and then
-				// waiting (with timeout) for the server to close the connection.
-				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-				if err != nil {
-					logf("write close: %v\n", err)
-					return err
-				}
-				select {
-				case <-done:
-				case <-time.After(time.Second):
-				}
-				return nil
+		case err := <-readErr:
+			return err
+
+		case message := <-messages:
+			if logLevel == 3 {
+				logf("%s\n", message)
 			}
+			var result WebsocketMessage
+			if err := json2.Unmarshal(message, &result); err != nil {
+				logf("WS unmarshall error: %s\n", err)
+				continue
+			}
+			processWebsocketMessage(result)
+
+		case <-ping.C:
+			_ = c.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return fmt.Errorf("ping: %w", err)
+			}
+
+		case <-refresh.C:
+			treatAllUnitsAsUpdated(false)
 		}
 	}
 }
