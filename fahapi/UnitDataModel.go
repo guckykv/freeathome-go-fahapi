@@ -86,6 +86,9 @@ func applyOutput(u Unit, out *InOutPut) bool {
 }
 
 func (u *UnitData) GetChannel() *Channel {
+	if u.Device == nil {
+		return nil
+	}
 	if channel, ok := u.Device.Channels[u.ChannelId]; ok {
 		return channel
 	}

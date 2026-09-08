@@ -12,13 +12,16 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	// pingInterval is how often a ping goes out; pongWait is how long a
-	// connection may stay silent before it counts as dead. pongWait must be
-	// comfortably larger than pingInterval.
+// pingInterval is how often a ping goes out; pongWait is how long a connection
+// may stay silent before it counts as dead. pongWait must be comfortably larger
+// than pingInterval. Variables rather than constants so tests can shorten them.
+var (
 	pingInterval = 20 * time.Second
 	pongWait     = 60 * time.Second
-	writeWait    = 10 * time.Second
+)
+
+const (
+	writeWait = 10 * time.Second
 
 	// DefaultDialer would wait 45s for a handshake, which delays noticing a
 	// blackholed host far longer than necessary.

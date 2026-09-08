@@ -7,7 +7,7 @@ of the [System Access Point 2.0 für Busch-free@home®](https://www.busch-jaeger
 ## fahapi - GoLang Package
 
 This package reads in all devices from the System Access Point and connects via WebSocket to get all updates.
-Some of the Device/Cahnnel types are hydrated in easier usabel Go Objects. 
+Some of the Device/Channel types are hydrated in easier usable Go Objects. 
 
 Currently supported Device Types (FunctionIDs):
 * FID_SWITCH_SENSOR                                  
@@ -44,12 +44,18 @@ See [fahcli](https://github.com/guckykv/freeathome-go-tools/cmd/fahcli).
 ### Limitations
 
 * Works only with SysAP ID `00000000-0000-0000-0000-000000000000`. 
-  So propably it doesn't work, if you have more than one SysAP.
+  So probably it doesn't work, if you have more than one SysAP.
   
 * ~~VirtualDevices not yet implemented.~~
   PUT call for creating virtual devices is implemented. And the standard Unit logging now shows the NativeId too.
   The fhapi also supports, that new devices show up while the websocket loop already runs.
 
-* No writing possiblies via the `UnitModel` data structure.
+* `StartWebSocketLoop` takes a `context.Context` as its first argument. Cancel it to shut
+  down; the library no longer installs signal handlers of its own. Use
+  `fahapi.TreatAllUnitsAsUpdated(true)` for the full flush that used to be bound to SIGHUP.
+  The connection is kept alive with websocket pings and re-established with a backoff when
+  it drops.
+
+* No writing possibilities via the `UnitModel` data structure.
   If you want to change a value, you have to use `fahapi.PutDatapoint(sysapId, deviceId, channelId, datapointId, value)`.
   Via WebSocket connection the change will be synced into the `UnitModel` very quickly.
