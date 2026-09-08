@@ -37,7 +37,7 @@ func StartWebSocketLoop(refreshTime int) error {
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				logger.Printf("read:", err)
+				logger.Printf("websocket read: %v", err)
 				return
 			}
 			if logLevel == 3 { // debug out
@@ -114,7 +114,7 @@ func updateDevices(message WebsocketMessage) []string {
 	for updDatapoint, updValue := range message.ZeroSysAp.Datapoints {
 		split := strings.Split(updDatapoint, "/")
 		if len(split) != 3 {
-			logger.Fatalf("illegal message %x: illegal datapoint format %s", message, updDatapoint)
+			logger.Fatalf("illegal message %+v: illegal datapoint format %s", message, updDatapoint)
 		}
 		deviceId := split[0]
 		channelId := split[1]

@@ -8,7 +8,7 @@ import (
 )
 
 // change has to be bigger than that
-//const luminanceLevel = 0.015  // logarithm change of lux
+// const luminanceLevel = 0.015  // logarithm change of lux
 const temperatureLevel = 0.09 // °C
 
 type WeatherStationTemperatureUnit struct {
