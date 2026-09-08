@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"time"
 )
@@ -69,12 +68,12 @@ func getUnit(deviceId, channelId string) Unit {
 }
 
 func PrtAllUnits() {
-	log.Println("------- BEGIN DUMP ALL UNITS")
+	logf("------- BEGIN DUMP ALL UNITS\n")
 	keys := getUnitMapKeysSortedByFloorRoom()
 	for _, key := range keys {
-		log.Println(UnitMap[key].String())
+		logf("%s\n", UnitMap[key].String())
 	}
-	log.Println("------- END DUMP ALL UNITS")
+	logf("------- END DUMP ALL UNITS\n")
 }
 
 // Sort
@@ -170,16 +169,16 @@ var countTickRounds = 0
 
 func treatAllUnitsAsUpdated(forceLogging bool) {
 	if forceLogging || logLevel > 1 {
-		logger.Printf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
+		logf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
 	} else if logLevel > 0 {
-		logger.Printf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", countTickRounds)
+		logf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", countTickRounds)
 	}
 
 	keys := getUnitMapKeysSortedByFloorRoom()
 	handleUpdatedUnits(keys, forceLogging || logLevel > 1)
 
 	if logLevel > 1 {
-		logger.Printf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
+		logf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
 	}
 	countTickRounds++
 }
@@ -192,7 +191,7 @@ func handleUpdatedUnits(unitKeys []string, printDevices bool) {
 	for _, key := range unitKeys {
 		unit := UnitMap[key]
 		if printDevices {
-			logger.Printf("%s\n", unit)
+			logf("%s\n", unit)
 		}
 		unit.resetChanged()
 	}

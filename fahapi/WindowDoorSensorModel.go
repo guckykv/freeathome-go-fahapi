@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -18,7 +17,7 @@ func CastWDS(u Unit) *WindowDoorSensorUnit {
 	if typeSave, ok := u.(*WindowDoorSensorUnit); ok {
 		return typeSave
 	}
-	log.Print("CastWDS - wrong type\n")
+	logf("CastWDS: wrong unit type %T\n", u)
 	return nil
 }
 

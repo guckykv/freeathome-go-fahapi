@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"time"
 )
@@ -25,7 +24,7 @@ func CastRTC(u Unit) *RoomTemperatureControllerUnit {
 	if typeSave, ok := u.(*RoomTemperatureControllerUnit); ok {
 		return typeSave
 	}
-	log.Print("CastRTC - wrong type\n")
+	logf("CastRTC: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -60,7 +59,9 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 	case 0x0042: // AL_CONTROLLER_ON_OFF_REQUEST
 	case 0x0111: // AL_INFO_ERROR
 		if *outPut.Value != "0" {
-			log.Fatalf("Device Error %s", *outPut.Value)
+			// A controller reporting an error is a normal operating state,
+			// not a reason to end the process.
+			logf("room temperature controller %s: device error %s\n", rtc.getUnitMapKey(), *outPut.Value)
 		}
 	case 0x0130: // AL_MEASURED_TEMPERATURE
 		actual, _ := strconv.ParseFloat(*outPut.Value, 64)

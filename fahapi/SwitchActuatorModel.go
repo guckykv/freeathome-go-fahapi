@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -20,7 +19,7 @@ func CastSAU(u Unit) *SwitchActuatorUnit {
 	if typeSave, ok := u.(*SwitchActuatorUnit); ok {
 		return typeSave
 	}
-	log.Print("CastSAU - wrong type\n")
+	logf("CastSAU: wrong unit type %T\n", u)
 	return nil
 }
 

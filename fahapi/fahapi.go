@@ -204,6 +204,17 @@ var apiConfig = apiConfiguration{}
 // unresponsive SysAP would block a call forever.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
+// logf writes through the logger handed to ConfigureApi. It falls back to the
+// standard logger, so logging before ConfigureApi -- or with a nil logger --
+// cannot panic.
+func logf(format string, v ...any) {
+	if logger != nil {
+		logger.Printf(format, v...)
+		return
+	}
+	log.Printf(format, v...)
+}
+
 func ConfigureApi(
 	host string,
 	username string,
@@ -221,16 +232,25 @@ func ConfigureApi(
 	logLevel = logLevelParam
 }
 
-func ReadAndHydradteAllDevices() {
+// ReadAndHydrateAllDevices loads the SysAP configuration and builds the Unit
+// map from it. It must be called once before StartWebSocketLoop.
+func ReadAndHydrateAllDevices() error {
 	configResult, err := GetConfiguration()
 	if err != nil {
-		logger.Fatalf("can't initialize f@h api: %s", err)
+		return fmt.Errorf("can't initialize f@h api: %w", err)
 	}
 
 	SysAPConfiguration = configResult
 	FreeDevices = configResult.Devices
 
 	hydrateAllDevices(FreeDevices)
+	return nil
+}
+
+// Deprecated: misspelled name kept for existing callers. Use
+// ReadAndHydrateAllDevices, which reports failures instead of swallowing them.
+func ReadAndHydradteAllDevices() error {
+	return ReadAndHydrateAllDevices()
 }
 
 func GetDeviceList() (*Devicelist, error) {
@@ -339,12 +359,12 @@ func loadUrl(httpUrl string) ([]byte, error) {
 	req.Header.Set("Authorization", apiConfig.Authentication)
 
 	if logLevel > 1 {
-		logger.Printf("getting %s ...\n", httpUrl)
+		logf("getting %s ...\n", httpUrl)
 	}
 
 	response, err := httpClient.Do(req)
 	if err != nil {
-		logger.Printf("error getting %s: %s\n", httpUrl, err.Error())
+		logf("error getting %s: %s\n", httpUrl, err.Error())
 		return nil, err
 	}
 	defer response.Body.Close()

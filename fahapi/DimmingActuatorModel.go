@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 )
@@ -23,7 +22,7 @@ func CastDAU(u Unit) *DimmingActuatorUnit {
 	if typeSave, ok := u.(*DimmingActuatorUnit); ok {
 		return typeSave
 	}
-	log.Print("CastDAU - wrong type\n")
+	logf("CastDAU: wrong unit type %T\n", u)
 	return nil
 }
 

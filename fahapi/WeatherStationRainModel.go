@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 )
@@ -23,7 +22,7 @@ func CastWSR(u Unit) *WeatherStationRainUnit {
 	if typeSave, ok := u.(*WeatherStationRainUnit); ok {
 		return typeSave
 	}
-	log.Print("CastWSR - wrong type\n")
+	logf("CastWSR: wrong unit type %T\n", u)
 	return nil
 }
 

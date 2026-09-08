@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 )
@@ -25,7 +24,7 @@ func CastWST(u Unit) *WeatherStationTemperatureUnit {
 	if typeSave, ok := u.(*WeatherStationTemperatureUnit); ok {
 		return typeSave
 	}
-	log.Print("CastWST - wrong type\n")
+	logf("CastWST: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -54,7 +53,7 @@ func (ws *WeatherStationTemperatureUnit) updateUnitFromOutDatapoint(outPut *InOu
 		temperature, _ := strconv.ParseFloat(*outPut.Value, 64)
 		if math.Abs(ws.Temperature-temperature) >= temperatureLevel {
 			if temperature == 0.0 && math.Abs(ws.Temperature) > 5.0 {
-				log.Printf("Unplausible temp change: from %.2f°C to 0°C. Ignored.", ws.Temperature)
+				logf("Unplausible temp change: from %.2f°C to 0°C. Ignored.\n", ws.Temperature)
 			} else {
 				ws.Temperature = temperature
 				ws.TemperatureSet = true

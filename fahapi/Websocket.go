@@ -19,7 +19,7 @@ func StartWebSocketLoop(refreshTime int) error {
 
 	u := url.URL{Scheme: "ws", Host: apiConfig.Host, Path: WebSocketPath}
 	if logLevel > 0 {
-		logger.Printf("connecting to %s", u.String())
+		logf("connecting to %s", u.String())
 	}
 
 	header := http.Header{}
@@ -37,7 +37,7 @@ func StartWebSocketLoop(refreshTime int) error {
 		for {
 			_, message, err := c.ReadMessage()
 			if err != nil {
-				logger.Printf("websocket read: %v", err)
+				logf("websocket read: %v", err)
 				return
 			}
 			if logLevel == 3 { // debug out
@@ -46,7 +46,7 @@ func StartWebSocketLoop(refreshTime int) error {
 			var result WebsocketMessage
 			err = json2.Unmarshal(message, &result)
 			if err != nil {
-				logger.Printf("WS unmarshall error: %s\n", err)
+				logf("WS unmarshall error: %s\n", err)
 			} else {
 				processWebsocketMessage(result)
 			}
@@ -65,7 +65,7 @@ func StartWebSocketLoop(refreshTime int) error {
 		case t := <-ticker.C:
 			err := c.WriteMessage(websocket.TextMessage, []byte(t.String()))
 			if err != nil {
-				logger.Println("ticker write:", err)
+				logf("ticker write: %v\n", err)
 				return err
 			}
 			ticks++
@@ -75,7 +75,7 @@ func StartWebSocketLoop(refreshTime int) error {
 				treatAllUnitsAsUpdated(false) // regulary flush all units
 			}
 		case sig := <-interrupt:
-			logger.Println("interrupt", sig)
+			logf("interrupt: %v\n", sig)
 
 			if sig.String() == "hangup" {
 				treatAllUnitsAsUpdated(true)
@@ -84,7 +84,7 @@ func StartWebSocketLoop(refreshTime int) error {
 				// waiting (with timeout) for the server to close the connection.
 				err := c.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				if err != nil {
-					logger.Println("write close:", err)
+					logf("write close: %v\n", err)
 					return err
 				}
 				select {
@@ -114,7 +114,9 @@ func updateDevices(message WebsocketMessage) []string {
 	for updDatapoint, updValue := range message.ZeroSysAp.Datapoints {
 		split := strings.Split(updDatapoint, "/")
 		if len(split) != 3 {
-			logger.Fatalf("illegal message %+v: illegal datapoint format %s", message, updDatapoint)
+			// One malformed key must not take the process down; skip it.
+			logf("warning: [updateDevices] illegal datapoint format %q, skipped\n", updDatapoint)
+			continue
 		}
 		deviceId := split[0]
 		channelId := split[1]
@@ -128,19 +130,19 @@ func updateDevices(message WebsocketMessage) []string {
 		if device, ok = FreeDevices[deviceId]; !ok {
 			var err error
 			if device, err = addNewDevice(deviceId); err != nil {
-				logger.Printf("error: [updateDevices] No device %s found and failed to load it: %s\n", deviceId, err)
+				logf("error: [updateDevices] No device %s found and failed to load it: %s\n", deviceId, err)
 			}
 			continue
 		}
 		if channel, ok = device.Channels[channelId]; !ok {
 			if logLevel > 1 {
-				logger.Printf("warning: [updateDevices] No channel %s for device %s\n", channelId, deviceId)
+				logf("warning: [updateDevices] No channel %s for device %s\n", channelId, deviceId)
 			}
 			continue
 		}
 		if outPoint, ok = channel.Outputs[outDatapointId]; !ok {
 			if logLevel > 1 {
-				logger.Printf("warning: [updateDevices] No out datapoint %s for device %s and channel %s\n", outDatapointId, deviceId, channelId)
+				logf("warning: [updateDevices] No out datapoint %s for device %s and channel %s\n", outDatapointId, deviceId, channelId)
 			}
 			continue
 		}
@@ -183,9 +185,9 @@ func addNewDevice(deviceId string) (device *Device, err error) {
 		if device.NativeId != nil {
 			virtual = fmt.Sprintf("virtual [%s] ", *device.NativeId)
 		}
-		logger.Printf("Add new %sdevice %s (resulting in %d new Units)\n", virtual, deviceId, len(newUnitKeys))
+		logf("Add new %sdevice %s (resulting in %d new Units)\n", virtual, deviceId, len(newUnitKeys))
 		for _, key := range newUnitKeys {
-			logger.Println(UnitMap[key].String())
+			logf("%s\n", UnitMap[key].String())
 		}
 	}
 

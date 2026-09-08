@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"log"
 )
 
 type SwitchSensorUnit struct {
@@ -17,7 +16,7 @@ func CastSSU(u Unit) *SwitchSensorUnit {
 	if typeSave, ok := u.(*SwitchSensorUnit); ok {
 		return typeSave
 	}
-	log.Print("CastSSU - wrong type\n")
+	logf("CastSSU: wrong unit type %T\n", u)
 	return nil
 }
 
