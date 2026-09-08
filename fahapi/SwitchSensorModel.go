@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 )
 
 type SwitchSensorUnit struct {
@@ -16,7 +17,7 @@ func CastSSU(u Unit) *SwitchSensorUnit {
 	if typeSave, ok := u.(*SwitchSensorUnit); ok {
 		return typeSave
 	}
-	logf("CastSSU: wrong unit type %T\n", u)
+	log.Printf("CastSSU: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -70,9 +71,9 @@ func (ssu *SwitchSensorUnit) String() string {
 	return fmt.Sprintf("%s %s: %s ", ssu.prtUnitHead(), ssu.DisplayName(), on)
 }
 
-func switchSensorFactory(deviceId string, device *Device, channelId string) Unit {
+func switchSensorFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	wds := SwitchSensorUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeSwitchSensor),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeSwitchSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

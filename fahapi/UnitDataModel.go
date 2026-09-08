@@ -2,17 +2,19 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"time"
 )
 
-var UnitMap map[string]Unit
-
 type UnitTypeConst string
 
 // hydrated data structures
 type UnitData struct {
+	// client is the owner; it gives a unit access to logging without a global.
+	client *Client
+
 	SerialNumber string
 	NativeId     *string
 	ChannelId    string
@@ -30,6 +32,18 @@ type Unit interface {
 	getUnitMapKey() string
 	updateUnitFromOutDatapoint(outPut *InOutPut) bool
 	resetChanged()
+}
+
+func (u *UnitData) logf(format string, v ...any) {
+	if u != nil && u.client != nil {
+		u.client.logf(format, v...)
+		return
+	}
+	log.Printf(format, v...)
+}
+
+func (u *UnitData) verbose() bool {
+	return u != nil && u.client != nil && u.client.logLevel > 1
 }
 
 // Str dereferences an optional string of the API model. Almost every field the
@@ -53,22 +67,22 @@ func (u *UnitData) DisplayName() string {
 // floatValue and intValue parse a datapoint value. A malformed value is
 // reported and rejected rather than silently becoming 0, which would otherwise
 // be passed on as a genuine measurement.
-func floatValue(out *InOutPut) (float64, bool) {
+func (u *UnitData) floatValue(out *InOutPut) (float64, bool) {
 	v, err := strconv.ParseFloat(*out.Value, 64)
 	if err != nil {
-		if logLevel > 1 {
-			logf("warning: pairingID 0x%04x: %q is not a number, ignored\n", *out.PairingID, *out.Value)
+		if u.verbose() {
+			u.logf("warning: pairingID 0x%04x: %q is not a number, ignored\n", *out.PairingID, *out.Value)
 		}
 		return 0, false
 	}
 	return v, true
 }
 
-func intValue(out *InOutPut) (int, bool) {
+func (u *UnitData) intValue(out *InOutPut) (int, bool) {
 	v, err := strconv.Atoi(*out.Value)
 	if err != nil {
-		if logLevel > 1 {
-			logf("warning: pairingID 0x%04x: %q is not an integer, ignored\n", *out.PairingID, *out.Value)
+		if u.verbose() {
+			u.logf("warning: pairingID 0x%04x: %q is not an integer, ignored\n", *out.PairingID, *out.Value)
 		}
 		return 0, false
 	}
@@ -116,21 +130,21 @@ func (u *UnitData) getUnitMapKey() string {
 	return getUnitMapKey(u.SerialNumber, u.ChannelId)
 }
 
-func getUnit(deviceId, channelId string) Unit {
-	key := getUnitMapKey(deviceId, channelId)
-	if unit, ok := UnitMap[key]; ok {
-		return unit
-	}
-	return nil
+func (c *Client) getUnit(deviceId, channelId string) Unit {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.units[getUnitMapKey(deviceId, channelId)]
 }
 
-func PrtAllUnits() {
-	logf("------- BEGIN DUMP ALL UNITS\n")
-	keys := getUnitMapKeysSortedByFloorRoom()
-	for _, key := range keys {
-		logf("%s\n", UnitMap[key].String())
+// PrtAllUnits dumps every unit, sorted by floor and room.
+func (c *Client) PrtAllUnits() {
+	c.logf("------- BEGIN DUMP ALL UNITS\n")
+	for _, key := range c.unitKeysSortedByFloorRoom() {
+		if unit := c.Unit(key); unit != nil {
+			c.logf("%s\n", unit.String())
+		}
 	}
-	logf("------- END DUMP ALL UNITS\n")
+	c.logf("------- END DUMP ALL UNITS\n")
 }
 
 // Sort
@@ -143,29 +157,26 @@ func (u ByFloorAndRoom) Less(i, j int) bool {
 }
 func (u ByFloorAndRoom) Swap(i, j int) { u[i], u[j] = u[j], u[i] }
 
-func getUnitMapKeysSortedByFloorRoom() []string {
-	copyArray := make([]Unit, len(UnitMap))
-	var i int = 0
-	for _, unit := range UnitMap {
-		copyArray[i] = unit
-		i++
+func (c *Client) unitKeysSortedByFloorRoom() []string {
+	c.mu.RLock()
+	units := make([]Unit, 0, len(c.units))
+	for _, unit := range c.units {
+		units = append(units, unit)
 	}
-	sort.Sort(ByFloorAndRoom(copyArray))
+	c.mu.RUnlock()
 
-	keys := make([]string, len(UnitMap))
+	sort.Sort(ByFloorAndRoom(units))
 
-	i = 0
-	for _, unit := range copyArray {
+	keys := make([]string, len(units))
+	for i, unit := range units {
 		keys[i] = unit.getUnitMapKey()
-		i++
 	}
-
 	return keys
 }
 
 // ####
 
-func GetFloorRoom(device *Device, channel *Channel) (string, string) {
+func (c *Client) GetFloorRoom(device *Device, channel *Channel) (string, string) {
 	var floor, room string
 	var floorId, roomId string
 
@@ -190,7 +201,11 @@ func GetFloorRoom(device *Device, channel *Channel) (string, string) {
 		roomId = *device.Room
 	}
 
-	if floorObject, ok := SysAPConfiguration.Floorplan.Floors[floorId]; ok {
+	if c.configuration == nil {
+		return "", ""
+	}
+
+	if floorObject, ok := c.configuration.Floorplan.Floors[floorId]; ok {
 		floor = *floorObject.Name
 		if roomObject, ok := floorObject.Rooms[roomId]; ok {
 			room = *roomObject.Name
@@ -202,11 +217,12 @@ func GetFloorRoom(device *Device, channel *Channel) (string, string) {
 	return floor, room
 }
 
-func unitDataFactory(deviceId, channelId string, unitType UnitTypeConst) UnitData {
-	device := FreeDevices[deviceId]
-	floor, room := GetFloorRoom(device, device.Channels[channelId])
+func (c *Client) unitDataFactory(deviceId, channelId string, unitType UnitTypeConst) UnitData {
+	device := c.devices[deviceId]
+	floor, room := c.GetFloorRoom(device, device.Channels[channelId])
 
 	return UnitData{
+		client:       c,
 		SerialNumber: deviceId,
 		NativeId:     device.NativeId,
 		ChannelId:    channelId,
@@ -218,57 +234,59 @@ func unitDataFactory(deviceId, channelId string, unitType UnitTypeConst) UnitDat
 	}
 }
 
-func hydrateAllDevices(devices map[string]*Device) {
-	UnitMap = make(map[string]Unit, len(devices))
-
-	for deviceId, device := range devices {
-		hydrateDevice(deviceId, device)
+func (c *Client) hydrateAllDevices() {
+	c.mu.Lock()
+	c.units = make(map[string]Unit, len(c.devices))
+	for deviceId, device := range c.devices {
+		c.hydrateDeviceLocked(deviceId, device)
 	}
+	c.mu.Unlock()
 
-	treatAllUnitsAsUpdated(false) // initially handle all units as updated - e.g. send all to influx
+	c.treatAllUnitsAsUpdated(false) // initially handle all units as updated - e.g. send all to influx
 }
-
-var countTickRounds = 0
 
 // TreatAllUnitsAsUpdated reports every unit as updated even though nothing
 // changed. Applications use this to force a full flush, typically on SIGHUP.
-func TreatAllUnitsAsUpdated(forceLogging bool) {
-	treatAllUnitsAsUpdated(forceLogging)
+func (c *Client) TreatAllUnitsAsUpdated(forceLogging bool) {
+	c.treatAllUnitsAsUpdated(forceLogging)
 }
 
-func treatAllUnitsAsUpdated(forceLogging bool) {
-	if forceLogging || logLevel > 1 {
-		logf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
-	} else if logLevel > 0 {
-		logf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", countTickRounds)
+func (c *Client) treatAllUnitsAsUpdated(forceLogging bool) {
+	if forceLogging || c.logLevel > 1 {
+		c.logf("------- BEGIN TREAD AS UNITS AS UPDATED --- %d ---\n", c.tickRounds)
+	} else if c.logLevel > 0 {
+		c.logf("------- TICK EVENT %d - MARK ALL AS UPDATED\n", c.tickRounds)
 	}
 
-	keys := getUnitMapKeysSortedByFloorRoom()
-	handleUpdatedUnits(keys, forceLogging || logLevel > 1)
+	keys := c.unitKeysSortedByFloorRoom()
+	c.handleUpdatedUnits(keys, forceLogging || c.logLevel > 1)
 
-	if logLevel > 1 {
-		logf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", countTickRounds)
+	if c.logLevel > 1 {
+		c.logf("------- END TREAD AS UNITS AS UPDATED --- %d ---\n", c.tickRounds)
 	}
-	countTickRounds++
+	c.tickRounds++
 }
 
-func handleUpdatedUnits(unitKeys []string, printDevices bool) {
-	if wsUpdateUnitCallback != nil {
-		wsUpdateUnitCallback(unitKeys) // tell someone what has changed
+func (c *Client) handleUpdatedUnits(unitKeys []string, printDevices bool) {
+	if c.unitCallback != nil {
+		c.unitCallback(unitKeys) // tell someone what has changed
 	}
 
 	for _, key := range unitKeys {
-		unit := UnitMap[key]
+		unit := c.Unit(key)
+		if unit == nil {
+			continue
+		}
 		if printDevices {
-			logf("%s\n", unit)
+			c.logf("%s\n", unit)
 		}
 		unit.resetChanged()
 	}
 }
 
-func reHydrateUnitValue(deviceId string, channelId string, newData *InOutPut) (string, bool) {
+func (c *Client) reHydrateUnitValue(deviceId string, channelId string, newData *InOutPut) (string, bool) {
 	key := getUnitMapKey(deviceId, channelId)
-	unit := UnitMap[key]
+	unit := c.Unit(key)
 	if unit == nil {
 		//fmt.Printf("reHydrateUnitValue: no unit found for key %s.\n", key)
 		return "", false
@@ -280,14 +298,20 @@ func reHydrateUnitValue(deviceId string, channelId string, newData *InOutPut) (s
 	return key, changed
 }
 
-func hydrateDevice(deviceId string, device *Device) []string {
-	var newUnitKeys []string
-	newUnitKeys = make([]string, 0, len(device.Channels))
+func (c *Client) hydrateDevice(deviceId string, device *Device) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.hydrateDeviceLocked(deviceId, device)
+}
+
+// hydrateDeviceLocked expects c.mu to be held for writing.
+func (c *Client) hydrateDeviceLocked(deviceId string, device *Device) []string {
+	newUnitKeys := make([]string, 0, len(device.Channels))
 
 	for channelId := range device.Channels {
-		if unit := hydrateChannel(deviceId, device, channelId); unit != nil {
+		if unit := c.hydrateChannel(deviceId, device, channelId); unit != nil {
 			key := unit.getUnitMapKey()
-			UnitMap[key] = unit
+			c.units[key] = unit
 			newUnitKeys = append(newUnitKeys, key)
 		}
 	}
@@ -295,7 +319,7 @@ func hydrateDevice(deviceId string, device *Device) []string {
 	return newUnitKeys
 }
 
-func hydrateChannel(deviceId string, device *Device, channelId string) Unit {
+func (c *Client) hydrateChannel(deviceId string, device *Device, channelId string) Unit {
 	channel := device.Channels[channelId]
 	if channel == nil || channel.FunctionID == nil {
 		// Channels without a functionID exist on real hardware and are simply
@@ -305,34 +329,34 @@ func hydrateChannel(deviceId string, device *Device, channelId string) Unit {
 
 	switch FunctionIdType(*channel.FunctionID) {
 	case FID_SWITCH_SENSOR:
-		return switchSensorFactory(deviceId, device, channelId)
+		return switchSensorFactory(c, deviceId, device, channelId)
 
 	case FID_DIMMING_SENSOR:
-		return dimmingSensorFactory(deviceId, device, channelId)
+		return dimmingSensorFactory(c, deviceId, device, channelId)
 
 	case FID_SWITCH_ACTUATOR:
-		return switchActuatorFactory(deviceId, device, channelId)
+		return switchActuatorFactory(c, deviceId, device, channelId)
 
 	case FID_DIMMING_ACTUATOR:
-		return dimmingActuatorFactory(deviceId, device, channelId)
+		return dimmingActuatorFactory(c, deviceId, device, channelId)
 
 	case FID_WINDOW_DOOR_SENSOR:
-		return windowDoorSensorFactory(deviceId, device, channelId)
+		return windowDoorSensorFactory(c, deviceId, device, channelId)
 
 	case FID_ROOM_TEMPERATURE_CONTROLLER_MASTER_WITHOUT_FAN:
-		return roomTemperatureControllerFactory(deviceId, device, channelId)
+		return roomTemperatureControllerFactory(c, deviceId, device, channelId)
 
 	case FID_BRIGHTNESS_SENSOR:
-		return weatherStationBrightnessFactory(deviceId, device, channelId)
+		return weatherStationBrightnessFactory(c, deviceId, device, channelId)
 
 	case FID_RAIN_SENSOR:
-		return weatherStationRainFactory(deviceId, device, channelId)
+		return weatherStationRainFactory(c, deviceId, device, channelId)
 
 	case FID_TEMPERATURE_SENSOR:
-		return weatherStationTemperatureFactory(deviceId, device, channelId)
+		return weatherStationTemperatureFactory(c, deviceId, device, channelId)
 
 	case FID_WIND_SENSOR:
-		return weatherStationWindFactory(deviceId, device, channelId)
+		return weatherStationWindFactory(c, deviceId, device, channelId)
 
 	}
 

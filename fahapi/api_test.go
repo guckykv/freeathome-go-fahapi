@@ -3,6 +3,7 @@ package fahapi
 import (
 	"encoding/base64"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,10 +12,9 @@ import (
 
 const testSysApID = "00000000-0000-0000-0000-000000000000"
 
-// serveApi points the library at a test server and returns the requests it saw.
-func serveApi(t *testing.T, handler http.HandlerFunc) *[]*http.Request {
+// serveApi returns a client pointed at a test server, plus the requests it saw.
+func serveApi(t *testing.T, handler http.HandlerFunc) (*Client, *[]*http.Request) {
 	t.Helper()
-	quietApi(t)
 
 	var seen []*http.Request
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,18 +23,23 @@ func serveApi(t *testing.T, handler http.HandlerFunc) *[]*http.Request {
 	}))
 	t.Cleanup(srv.Close)
 
-	ConfigureApi(strings.TrimPrefix(srv.URL, "http://"), "user", "secret", nil, nil, logger, 0)
-	return &seen
+	c := New(Config{
+		Host:     strings.TrimPrefix(srv.URL, "http://"),
+		Username: "user",
+		Password: "secret",
+		Logger:   log.New(io.Discard, "", 0),
+	})
+	return c, &seen
 }
 
 // RFC 7617 has no colon after the scheme. Sending one made current SysAP
 // firmware answer 401 to every request.
 func TestAuthorizationHeaderFormat(t *testing.T) {
-	seen := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+	c, seen := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"`+testSysApID+`":{"sysapName":"test","devices":{}}}`)
 	})
 
-	if _, err := GetConfiguration(); err != nil {
+	if _, err := c.GetConfiguration(); err != nil {
 		t.Fatalf("GetConfiguration: %v", err)
 	}
 
@@ -49,11 +54,11 @@ func TestAuthorizationHeaderFormat(t *testing.T) {
 }
 
 func TestGetConfiguration(t *testing.T) {
-	serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+	c, _ := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"`+testSysApID+`":{"sysapName":"my sysap","devices":{"DEV1":{"displayName":"one"}}}}`)
 	})
 
-	sysap, err := GetConfiguration()
+	sysap, err := c.GetConfiguration()
 	if err != nil {
 		t.Fatalf("GetConfiguration: %v", err)
 	}
@@ -67,10 +72,10 @@ func TestGetConfiguration(t *testing.T) {
 
 func TestGetDatapoint(t *testing.T) {
 	t.Run("value", func(t *testing.T) {
-		serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+		c, _ := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"`+testSysApID+`":{"values":["42"]}}`)
 		})
-		got, err := GetDatapoint(testSysApID, "DEV1", "ch0000", "odp0000")
+		got, err := c.GetDatapoint(testSysApID, "DEV1", "ch0000", "odp0000")
 		if err != nil {
 			t.Fatalf("GetDatapoint: %v", err)
 		}
@@ -81,17 +86,17 @@ func TestGetDatapoint(t *testing.T) {
 
 	// Indexing Values[0] without a length check used to panic here.
 	t.Run("no values", func(t *testing.T) {
-		serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+		c, _ := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 			io.WriteString(w, `{"`+testSysApID+`":{"values":[]}}`)
 		})
-		if _, err := GetDatapoint(testSysApID, "DEV1", "ch0000", "odp0000"); err == nil {
+		if _, err := c.GetDatapoint(testSysApID, "DEV1", "ch0000", "odp0000"); err == nil {
 			t.Error("empty value list accepted")
 		}
 	})
 }
 
 func TestPutDatapoint(t *testing.T) {
-	seen := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+	c, seen := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		if string(body) != "1" {
 			t.Errorf("body = %q, want 1", body)
@@ -99,7 +104,7 @@ func TestPutDatapoint(t *testing.T) {
 		io.WriteString(w, `{"`+testSysApID+`":{"result":"OK"}}`)
 	})
 
-	ok, err := PutDatapoint(testSysApID, "DEV1", "ch0000", "idp0000", "1")
+	ok, err := c.PutDatapoint(testSysApID, "DEV1", "ch0000", "idp0000", "1")
 	if err != nil {
 		t.Fatalf("PutDatapoint: %v", err)
 	}
@@ -118,12 +123,12 @@ func TestPutDatapoint(t *testing.T) {
 
 // The SysAP puts usable diagnostics in the body of a failed request.
 func TestErrorIncludesResponseBody(t *testing.T) {
-	serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+	c, _ := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		io.WriteString(w, "device is locked")
 	})
 
-	_, err := GetConfiguration()
+	_, err := c.GetConfiguration()
 	if err == nil {
 		t.Fatal("expected an error for status 403")
 	}
@@ -133,11 +138,11 @@ func TestErrorIncludesResponseBody(t *testing.T) {
 }
 
 func TestPutVirtualDevice(t *testing.T) {
-	serveApi(t, func(w http.ResponseWriter, r *http.Request) {
+	c, _ := serveApi(t, func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, `{"`+testSysApID+`":{"devices":{"6000ABCDEF01":{"serial":"mine"}}}}`)
 	})
 
-	serial, err := PutVirtualDevice(testSysApID, "mine", &VirtualDevice{
+	serial, err := c.PutVirtualDevice(testSysApID, "mine", &VirtualDevice{
 		Type:       VirtualDeviceType_SwitchingActuator,
 		Properties: VirtualDeviceProperties{Displayname: "test", Ttl: "180"},
 	})

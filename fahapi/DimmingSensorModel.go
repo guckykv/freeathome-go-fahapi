@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 )
 
 type DimmingSensorUnit struct {
@@ -16,7 +17,7 @@ func CastDSU(u Unit) *DimmingSensorUnit {
 	if typeSave, ok := u.(*DimmingSensorUnit); ok {
 		return typeSave
 	}
-	logf("CastDSU: wrong unit type %T\n", u)
+	log.Printf("CastDSU: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -70,9 +71,9 @@ func (dsu *DimmingSensorUnit) String() string {
 	return fmt.Sprintf("%s %s: %s ", dsu.prtUnitHead(), dsu.DisplayName(), on)
 }
 
-func dimmingSensorFactory(deviceId string, device *Device, channelId string) Unit {
+func dimmingSensorFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	dsu := DimmingSensorUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeDimmingSensor),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeDimmingSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

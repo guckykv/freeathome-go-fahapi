@@ -9,7 +9,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 // see https://developer.eu.mybuildings.abb.com/fah_local/reference/functionids/
@@ -179,83 +182,161 @@ type VirtualDevicesSuccess struct {
 
 // ===============================================================================================
 
+// defaultSysApID is the only SysAP id the local API uses today.
+const defaultSysApID = "00000000-0000-0000-0000-000000000000"
+
 const ApiPathPrefix string = "/fhapi/v1"
 const WebSocketPath string = "/fhapi/v1/api/ws"
 
 type WebsocketUpdateUnitCallbackFunc func(unitKeys []string)
 type WebsocketUpdateMessageCallbackFunc func(message WebsocketMessage)
 
-var wsUpdateUnitCallback WebsocketUpdateUnitCallbackFunc
-var wsUpdateMessageCallback WebsocketUpdateMessageCallbackFunc
+// Config describes one System Access Point and how to report its updates.
+type Config struct {
+	// Host is the SysAP address, optionally with a port: "192.168.1.10".
+	Host     string
+	Username string
+	Password string
 
-var FreeDevices map[string]*Device
-var SysAPConfiguration *SysAP
-var logger *log.Logger
-var logLevel int
+	// UnitCallback receives the keys of the units that changed. MessageCallback
+	// receives every websocket message before it is applied. Both are called
+	// from the websocket loop's goroutine and must not block for long.
+	UnitCallback    WebsocketUpdateUnitCallbackFunc
+	MessageCallback WebsocketUpdateMessageCallbackFunc
 
-type apiConfiguration struct {
-	Host           string
-	Authentication string
+	// Logger defaults to the standard logger. LogLevel: 0 quiet, 1 updates and
+	// connection, 2 verbose, 3 dump raw websocket messages.
+	Logger   *log.Logger
+	LogLevel int
+
+	// Timeout bounds a single HTTP request. Defaults to 10s.
+	Timeout time.Duration
 }
 
-var apiConfig = apiConfiguration{}
+// Client talks to one System Access Point and holds the hydrated model of its
+// devices. Create it with New.
+//
+// Concurrency: the websocket loop applies every update from a single goroutine,
+// and the callbacks run in that goroutine too, so a callback sees a consistent
+// model and may read unit fields freely. That is where reading belongs.
+//
+// From any other goroutine, use Unit, Units, Device and Configuration: they
+// take a read lock and are safe. Their lock covers the maps, not the contents
+// of a unit -- the loop keeps writing those fields, so reading them outside a
+// callback is a data race. The "...Set" flags are valid only for the duration
+// of the callback that reported them.
+type Client struct {
+	host           string
+	authentication string
+	httpClient     *http.Client
+	dialer         *websocket.Dialer
 
-// httpClient is shared so connections are reused. Without a timeout a
-// unresponsive SysAP would block a call forever.
-var httpClient = &http.Client{Timeout: 10 * time.Second}
+	logger   *log.Logger
+	logLevel int
 
-// logf writes through the logger handed to ConfigureApi. It falls back to the
-// standard logger, so logging before ConfigureApi -- or with a nil logger --
-// cannot panic.
-func logf(format string, v ...any) {
-	if logger != nil {
-		logger.Printf(format, v...)
-		return
+	unitCallback    WebsocketUpdateUnitCallbackFunc
+	messageCallback WebsocketUpdateMessageCallbackFunc
+
+	mu            sync.RWMutex
+	devices       map[string]*Device
+	units         map[string]Unit
+	configuration *SysAP
+
+	tickRounds int
+}
+
+// New creates a client. It performs no I/O; call ReadAndHydrateAllDevices next.
+func New(cfg Config) *Client {
+	timeout := cfg.Timeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
 	}
-	log.Printf(format, v...)
+	logger := cfg.Logger
+	if logger == nil {
+		logger = log.Default()
+	}
+
+	return &Client{
+		host:           cfg.Host,
+		authentication: "Basic " + base64.StdEncoding.EncodeToString([]byte(cfg.Username+":"+cfg.Password)),
+		// One client so connections are reused. Without a timeout an
+		// unresponsive SysAP would block a call forever.
+		httpClient: &http.Client{Timeout: timeout},
+		dialer: &websocket.Dialer{
+			Proxy:            http.ProxyFromEnvironment,
+			HandshakeTimeout: handshakeTimeout,
+		},
+		logger:          logger,
+		logLevel:        cfg.LogLevel,
+		unitCallback:    cfg.UnitCallback,
+		messageCallback: cfg.MessageCallback,
+		devices:         map[string]*Device{},
+		units:           map[string]Unit{},
+	}
 }
 
-func ConfigureApi(
-	host string,
-	username string,
-	password string,
-	callbackUnit WebsocketUpdateUnitCallbackFunc,
-	callbackMessage WebsocketUpdateMessageCallbackFunc,
-	loggerParam *log.Logger,
-	logLevelParam int,
-) {
-	apiConfig.Host = host
-	apiConfig.Authentication = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
-	wsUpdateUnitCallback = callbackUnit
-	wsUpdateMessageCallback = callbackMessage
-	logger = loggerParam
-	logLevel = logLevelParam
+func (c *Client) logf(format string, v ...any) {
+	c.logger.Printf(format, v...)
+}
+
+// Unit returns the unit for a "deviceId.channelId" key, or nil.
+func (c *Client) Unit(key string) Unit {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.units[key]
+}
+
+// Units is a snapshot of the unit map. The map is a copy, the units in it are
+// not: their fields keep changing as updates arrive, and the "...Set" flags are
+// only meaningful inside a callback.
+func (c *Client) Units() map[string]Unit {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	units := make(map[string]Unit, len(c.units))
+	for key, unit := range c.units {
+		units[key] = unit
+	}
+	return units
+}
+
+// Device returns the raw device record, or nil.
+func (c *Client) Device(deviceId string) *Device {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.devices[deviceId]
+}
+
+// Configuration is the SysAP configuration read by ReadAndHydrateAllDevices.
+func (c *Client) Configuration() *SysAP {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.configuration
 }
 
 // ReadAndHydrateAllDevices loads the SysAP configuration and builds the Unit
 // map from it. It must be called once before StartWebSocketLoop.
-func ReadAndHydrateAllDevices() error {
-	configResult, err := GetConfiguration()
+func (c *Client) ReadAndHydrateAllDevices() error {
+	configResult, err := c.GetConfiguration()
 	if err != nil {
 		return fmt.Errorf("can't initialize f@h api: %w", err)
 	}
 
-	SysAPConfiguration = configResult
-	FreeDevices = configResult.Devices
+	c.mu.Lock()
+	c.configuration = configResult
+	c.devices = configResult.Devices
+	if c.devices == nil {
+		c.devices = map[string]*Device{}
+	}
+	c.mu.Unlock()
 
-	hydrateAllDevices(FreeDevices)
+	c.hydrateAllDevices()
 	return nil
 }
 
-// Deprecated: misspelled name kept for existing callers. Use
-// ReadAndHydrateAllDevices, which reports failures instead of swallowing them.
-func ReadAndHydradteAllDevices() error {
-	return ReadAndHydrateAllDevices()
-}
-
-func GetDeviceList() (*Devicelist, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s", apiConfig.Host, ApiPathPrefix, "/api/rest/devicelist")
-	json, err := loadUrl(httpUrl)
+func (c *Client) GetDeviceList() (*Devicelist, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s", c.host, ApiPathPrefix, "/api/rest/devicelist")
+	json, err := c.loadUrl(httpUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -264,9 +345,9 @@ func GetDeviceList() (*Devicelist, error) {
 	return &result, err
 }
 
-func GetDevice(sysap string, deviceId string) (*Device, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s", apiConfig.Host, ApiPathPrefix, "/api/rest/device", sysap, deviceId)
-	json, err := loadUrl(httpUrl)
+func (c *Client) GetDevice(sysap string, deviceId string) (*Device, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s", c.host, ApiPathPrefix, "/api/rest/device", sysap, deviceId)
+	json, err := c.loadUrl(httpUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -279,9 +360,9 @@ func GetDevice(sysap string, deviceId string) (*Device, error) {
 	return device, err
 }
 
-func GetDatapoint(sysap string, deviceId string, channelId string, datapointId string) (string, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s.%s.%s", apiConfig.Host, ApiPathPrefix, "/api/rest/datapoint", sysap, deviceId, channelId, datapointId)
-	json, err := loadUrl(httpUrl)
+func (c *Client) GetDatapoint(sysap string, deviceId string, channelId string, datapointId string) (string, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s.%s.%s", c.host, ApiPathPrefix, "/api/rest/datapoint", sysap, deviceId, channelId, datapointId)
+	json, err := c.loadUrl(httpUrl)
 	if err != nil {
 		return "", err
 	}
@@ -295,9 +376,9 @@ func GetDatapoint(sysap string, deviceId string, channelId string, datapointId s
 	return result.ZeroSysAp.Values[0], nil
 }
 
-func GetConfiguration() (*SysAP, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s", apiConfig.Host, ApiPathPrefix, "/api/rest/configuration")
-	json, err := loadUrl(httpUrl)
+func (c *Client) GetConfiguration() (*SysAP, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s", c.host, ApiPathPrefix, "/api/rest/configuration")
+	json, err := c.loadUrl(httpUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -311,14 +392,14 @@ func GetConfiguration() (*SysAP, error) {
 	return result.ZeroSysAp, err
 }
 
-func PutDatapoint(sysap string, deviceId string, channelId string, datapointId string, value string) (bool, error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s.%s.%s", apiConfig.Host, ApiPathPrefix, "/api/rest/datapoint", sysap, deviceId, channelId, datapointId)
+func (c *Client) PutDatapoint(sysap string, deviceId string, channelId string, datapointId string, value string) (bool, error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s.%s.%s", c.host, ApiPathPrefix, "/api/rest/datapoint", sysap, deviceId, channelId, datapointId)
 
 	var err error
 	var bstr, body []byte
 	bstr = []byte(value)
 
-	if body, err = putRequest(httpUrl, bytes.NewBuffer(bstr)); err != nil {
+	if body, err = c.putRequest(httpUrl, bytes.NewBuffer(bstr)); err != nil {
 		return false, err
 	}
 
@@ -330,14 +411,14 @@ func PutDatapoint(sysap string, deviceId string, channelId string, datapointId s
 	return ok, nil
 }
 
-func PutVirtualDevice(sysap, serial string, message *VirtualDevice) (virtualSerial string, err error) {
-	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s", apiConfig.Host, ApiPathPrefix, "/api/rest/virtualdevice", sysap, serial)
+func (c *Client) PutVirtualDevice(sysap, serial string, message *VirtualDevice) (virtualSerial string, err error) {
+	httpUrl := fmt.Sprintf("http://%s%s%s/%s/%s", c.host, ApiPathPrefix, "/api/rest/virtualdevice", sysap, serial)
 
 	var messageString []byte
 	messageString, err = json2.Marshal(message)
 
 	var returnBody []byte
-	if returnBody, err = putRequest(httpUrl, bytes.NewBuffer(messageString)); err != nil {
+	if returnBody, err = c.putRequest(httpUrl, bytes.NewBuffer(messageString)); err != nil {
 		return
 	}
 
@@ -354,21 +435,21 @@ func PutVirtualDevice(sysap, serial string, message *VirtualDevice) (virtualSeri
 	return "", fmt.Errorf("virtual Device PUT returned no device with serial %s (%s)", serial, returnBody)
 }
 
-func loadUrl(httpUrl string) ([]byte, error) {
+func (c *Client) loadUrl(httpUrl string) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodGet, httpUrl, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("accept", "application/json")
-	req.Header.Set("Authorization", apiConfig.Authentication)
+	req.Header.Set("Authorization", c.authentication)
 
-	if logLevel > 1 {
-		logf("getting %s ...\n", httpUrl)
+	if c.logLevel > 1 {
+		c.logf("getting %s ...\n", httpUrl)
 	}
 
-	response, err := httpClient.Do(req)
+	response, err := c.httpClient.Do(req)
 	if err != nil {
-		logf("error getting %s: %s\n", httpUrl, err.Error())
+		c.logf("error getting %s: %s\n", httpUrl, err.Error())
 		return nil, err
 	}
 	defer response.Body.Close()
@@ -381,15 +462,15 @@ func loadUrl(httpUrl string) ([]byte, error) {
 	return io.ReadAll(response.Body)
 }
 
-func putRequest(url string, data io.Reader) ([]byte, error) {
+func (c *Client) putRequest(url string, data io.Reader) ([]byte, error) {
 	req, err := http.NewRequest(http.MethodPut, url, data)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", apiConfig.Authentication)
+	req.Header.Set("Authorization", c.authentication)
 	req.Header.Set("Content-Type", "application/json")
 
-	response, err := httpClient.Do(req)
+	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

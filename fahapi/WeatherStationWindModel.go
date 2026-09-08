@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 )
 
 type WeatherStationWindUnit struct {
@@ -20,7 +21,7 @@ func CastWSW(u Unit) *WeatherStationWindUnit {
 	if typeSave, ok := u.(*WeatherStationWindUnit); ok {
 		return typeSave
 	}
-	logf("CastWSW: wrong unit type %T\n", u)
+	log.Printf("CastWSW: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -46,7 +47,7 @@ func (ws *WeatherStationWindUnit) updateUnitFromOutDatapoint(outPut *InOutPut) b
 			changed = true
 		}
 	case 0x0401: // AL_WIND_FORCE
-		windForce, ok := floatValue(outPut)
+		windForce, ok := ws.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -56,7 +57,7 @@ func (ws *WeatherStationWindUnit) updateUnitFromOutDatapoint(outPut *InOutPut) b
 			changed = true
 		}
 	case 0x0404: // AL_WIND_SPEED
-		wind, ok := floatValue(outPut)
+		wind, ok := ws.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -76,9 +77,9 @@ func (ws *WeatherStationWindUnit) resetChanged() {
 	ws.WindForceSet = false
 }
 
-func weatherStationWindFactory(deviceId string, device *Device, channelId string) Unit {
+func weatherStationWindFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	ws := WeatherStationWindUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationWind),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeWeatherStationWind),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

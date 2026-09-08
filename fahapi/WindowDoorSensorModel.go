@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -17,7 +18,7 @@ func CastWDS(u Unit) *WindowDoorSensorUnit {
 	if typeSave, ok := u.(*WindowDoorSensorUnit); ok {
 		return typeSave
 	}
-	logf("CastWDS: wrong unit type %T\n", u)
+	log.Printf("CastWDS: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -68,9 +69,9 @@ func (wds *WindowDoorSensorUnit) String() string {
 	return fmt.Sprintf("%s %s: %s", wds.prtUnitHead(), wds.DisplayName(), open)
 }
 
-func windowDoorSensorFactory(deviceId string, device *Device, channelId string) Unit {
+func windowDoorSensorFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	wds := WindowDoorSensorUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeWindowDoorSensor),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeWindowDoorSensor),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

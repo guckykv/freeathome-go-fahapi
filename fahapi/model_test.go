@@ -5,8 +5,6 @@ import "testing"
 // Every unit type reacts to its own pairing IDs. The table drives one datapoint
 // into a fresh unit and checks what it made of it.
 func TestUpdateUnitFromOutDatapoint(t *testing.T) {
-	quietApi(t)
-
 	tests := []struct {
 		name        string
 		unit        Unit
@@ -121,8 +119,6 @@ func TestUpdateUnitFromOutDatapoint(t *testing.T) {
 // An unchanged value must not be reported as an update, otherwise every
 // refresh would look like a real change.
 func TestRepeatedValueIsNotAChange(t *testing.T) {
-	quietApi(t)
-
 	u := &SwitchSensorUnit{}
 	if !applyOutput(u, out(0x0001, "1")) {
 		t.Fatal("first update should change the unit")
@@ -139,8 +135,6 @@ func TestRepeatedValueIsNotAChange(t *testing.T) {
 // A malformed value must be rejected. Silently turning it into 0 used to pass
 // it on as a genuine measurement.
 func TestMalformedValuesAreRejected(t *testing.T) {
-	quietApi(t)
-
 	t.Run("temperature", func(t *testing.T) {
 		u := &WeatherStationTemperatureUnit{Temperature: 18.5}
 		if applyOutput(u, out(0x0400, "")) {
@@ -165,8 +159,6 @@ func TestMalformedValuesAreRejected(t *testing.T) {
 // applyOutput absorbs the optional fields of the API model so no unit
 // implementation has to.
 func TestApplyOutputRejectsIncompleteDatapoints(t *testing.T) {
-	quietApi(t)
-
 	pairing := 0x0001
 	value := "1"
 
@@ -192,8 +184,6 @@ func TestApplyOutputRejectsIncompleteDatapoints(t *testing.T) {
 
 // String must survive a unit whose channel or display name is missing.
 func TestStringWithoutChannel(t *testing.T) {
-	quietApi(t)
-
 	for _, u := range []Unit{
 		&SwitchSensorUnit{}, &SwitchActuatorUnit{}, &DimmingSensorUnit{},
 		&DimmingActuatorUnit{}, &WindowDoorSensorUnit{},

@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"math"
 )
 
@@ -23,7 +24,7 @@ func CastWST(u Unit) *WeatherStationTemperatureUnit {
 	if typeSave, ok := u.(*WeatherStationTemperatureUnit); ok {
 		return typeSave
 	}
-	logf("CastWST: wrong unit type %T\n", u)
+	log.Printf("CastWST: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -52,7 +53,7 @@ func (ws *WeatherStationTemperatureUnit) updateUnitFromOutDatapoint(outPut *InOu
 		// The former "implausible jump to 0 °C" guard sat here. Those zeros came
 		// from ParseFloat failing on a malformed value, not from the sensor;
 		// floatValue rejects them at the source now.
-		temperature, ok := floatValue(outPut)
+		temperature, ok := ws.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -71,9 +72,9 @@ func (ws *WeatherStationTemperatureUnit) resetChanged() {
 	ws.FreezeAlarmSet = false
 }
 
-func weatherStationTemperatureFactory(deviceId string, device *Device, channelId string) Unit {
+func weatherStationTemperatureFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	ws := WeatherStationTemperatureUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationTemperature),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeWeatherStationTemperature),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

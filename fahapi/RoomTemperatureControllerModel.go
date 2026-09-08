@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -23,7 +24,7 @@ func CastRTC(u Unit) *RoomTemperatureControllerUnit {
 	if typeSave, ok := u.(*RoomTemperatureControllerUnit); ok {
 		return typeSave
 	}
-	logf("CastRTC: wrong unit type %T\n", u)
+	log.Printf("CastRTC: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -31,7 +32,7 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 	changed := false
 	switch *outPut.PairingID {
 	case 0x0030: // AL_ACTUATING_VALUE_HEATING (Determines the through flow volume of the control valve)
-		capacity, ok := intValue(outPut)
+		capacity, ok := rtc.intValue(outPut)
 		if !ok {
 			return false
 		}
@@ -44,7 +45,7 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 	case 0x0031: // AL_FAN_COIL_LEVEL
 	case 0x0032: // AL_ACTUATING_VALUE_COOLING (Determines the through flow volume of the control valve)
 	case 0x0033: // AL_SET_POINT_TEMPERATURE (Defines the displayed set point Temperature of the system)
-		target, ok := floatValue(outPut)
+		target, ok := rtc.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -66,10 +67,10 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 		if *outPut.Value != "0" {
 			// A controller reporting an error is a normal operating state,
 			// not a reason to end the process.
-			logf("room temperature controller %s: device error %s\n", rtc.getUnitMapKey(), *outPut.Value)
+			rtc.logf("room temperature controller %s: device error %s\n", rtc.getUnitMapKey(), *outPut.Value)
 		}
 	case 0x0130: // AL_MEASURED_TEMPERATURE
-		actual, ok := floatValue(outPut)
+		actual, ok := rtc.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -120,9 +121,9 @@ func (rtc *RoomTemperatureControllerUnit) String() string {
 	return fmt.Sprintf("%s %2.2f°C, %2.2f°C, %s (%d%%)", rtc.prtUnitHead(), rtc.ActualDegree, rtc.TargetDegree, active, rtc.Capacity)
 }
 
-func roomTemperatureControllerFactory(deviceId string, device *Device, channelId string) Unit {
+func roomTemperatureControllerFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	rtc := RoomTemperatureControllerUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeRoomTemperatureController),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeRoomTemperatureController),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

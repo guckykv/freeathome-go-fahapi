@@ -7,14 +7,13 @@ import (
 	"time"
 )
 
-// quietApi points the package globals at a discarding logger. Every test needs
-// it because the library keeps its configuration in package state.
-func quietApi(t *testing.T) {
+// testClient is a client that logs nowhere.
+func testClient(t *testing.T) *Client {
 	t.Helper()
-	logger = log.New(io.Discard, "", 0)
-	logLevel = 0
-	wsUpdateUnitCallback = nil
-	wsUpdateMessageCallback = nil
+	return New(Config{
+		Host:   "sysap.invalid",
+		Logger: log.New(io.Discard, "", 0),
+	})
 }
 
 func out(pairingID int, value string) *InOutPut {

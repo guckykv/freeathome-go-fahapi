@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"math"
 )
 
@@ -21,7 +22,7 @@ func CastWSR(u Unit) *WeatherStationRainUnit {
 	if typeSave, ok := u.(*WeatherStationRainUnit); ok {
 		return typeSave
 	}
-	logf("CastWSR: wrong unit type %T\n", u)
+	log.Printf("CastWSR: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -47,7 +48,7 @@ func (ws *WeatherStationRainUnit) updateUnitFromOutDatapoint(outPut *InOutPut) b
 			changed = true
 		}
 	case 0x0405: // AL_RAIN_SENSOR_ACTIVATION_PERCENTAGE
-		rainPercentage, ok := intValue(outPut)
+		rainPercentage, ok := ws.intValue(outPut)
 		if !ok {
 			return false
 		}
@@ -67,9 +68,9 @@ func (ws *WeatherStationRainUnit) resetChanged() {
 	ws.RainPercentageSet = false
 }
 
-func weatherStationRainFactory(deviceId string, device *Device, channelId string) Unit {
+func weatherStationRainFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	ws := WeatherStationRainUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationRain),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeWeatherStationRain),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

@@ -48,22 +48,23 @@ func testSysAP() *SysAP {
 	return sysap
 }
 
-func hydrateTestSysAP(t *testing.T) {
+func hydrateTestSysAP(t *testing.T) *Client {
 	t.Helper()
-	quietApi(t)
-	SysAPConfiguration = testSysAP()
-	FreeDevices = SysAPConfiguration.Devices
-	hydrateAllDevices(FreeDevices)
+	c := testClient(t)
+	c.configuration = testSysAP()
+	c.devices = c.configuration.Devices
+	c.hydrateAllDevices()
+	return c
 }
 
 func TestHydrationBuildsUnits(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
-	if len(UnitMap) != 2 {
-		t.Fatalf("hydrated %d units, want 2: %v", len(UnitMap), UnitMap)
+	if len(c.units) != 2 {
+		t.Fatalf("hydrated %d units, want 2: %v", len(c.units), c.units)
 	}
 
-	unit := getUnit("DEV1", "ch0000")
+	unit := c.getUnit("DEV1", "ch0000")
 	if unit == nil {
 		t.Fatal("no unit for DEV1.ch0000")
 	}
@@ -85,9 +86,9 @@ func TestHydrationBuildsUnits(t *testing.T) {
 // A channel without a functionID exists on real hardware and must be skipped
 // rather than crash the hydration.
 func TestChannelWithoutFunctionIDIsSkipped(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
-	if getUnit("DEV1", "ch0001") != nil {
+	if c.getUnit("DEV1", "ch0001") != nil {
 		t.Error("channel without functionID produced a unit")
 	}
 }
@@ -95,9 +96,9 @@ func TestChannelWithoutFunctionIDIsSkipped(t *testing.T) {
 // A device with a floor but no room used to panic: the early return only
 // covers a missing floor.
 func TestDeviceWithFloorButNoRoom(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
-	unit := getUnit("DEV2", "ch0000")
+	unit := c.getUnit("DEV2", "ch0000")
 	if unit == nil {
 		t.Fatal("no unit for DEV2.ch0000")
 	}
@@ -111,25 +112,25 @@ func TestDeviceWithFloorButNoRoom(t *testing.T) {
 }
 
 func TestCastToWrongTypeReturnsNil(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
-	if got := CastRTC(getUnit("DEV1", "ch0000")); got != nil {
+	if got := CastRTC(c.getUnit("DEV1", "ch0000")); got != nil {
 		t.Errorf("CastRTC on a switch actuator returned %v, want nil", got)
 	}
 }
 
 // A websocket update must reach the hydrated unit.
 func TestWebsocketUpdateReachesUnit(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
 	var reported []string
-	wsUpdateUnitCallback = func(keys []string) { reported = append(reported, keys...) }
+	c.unitCallback = func(keys []string) { reported = append(reported, keys...) }
 
 	var msg WebsocketMessage
 	msg.ZeroSysAp.Datapoints = map[string]string{"DEV1/ch0000/odp0000": "0"}
-	processWebsocketMessage(msg)
+	c.processWebsocketMessage(msg)
 
-	if sau := CastSAU(getUnit("DEV1", "ch0000")); sau.On {
+	if sau := CastSAU(c.getUnit("DEV1", "ch0000")); sau.On {
 		t.Error("unit still on after the update said off")
 	}
 	if len(reported) != 1 || reported[0] != "DEV1.ch0000" {
@@ -139,16 +140,16 @@ func TestWebsocketUpdateReachesUnit(t *testing.T) {
 
 // A malformed datapoint key must not take the process down.
 func TestMalformedDatapointKeyIsSkipped(t *testing.T) {
-	hydrateTestSysAP(t)
+	c := hydrateTestSysAP(t)
 
 	var msg WebsocketMessage
 	msg.ZeroSysAp.Datapoints = map[string]string{
 		"this-is-not-a-valid-key": "1",
 		"DEV1/ch0000/odp0000":     "0",
 	}
-	processWebsocketMessage(msg)
+	c.processWebsocketMessage(msg)
 
-	if sau := CastSAU(getUnit("DEV1", "ch0000")); sau.On {
+	if sau := CastSAU(c.getUnit("DEV1", "ch0000")); sau.On {
 		t.Error("the valid datapoint next to the malformed one was not applied")
 	}
 }

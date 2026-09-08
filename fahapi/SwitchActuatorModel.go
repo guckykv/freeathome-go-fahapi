@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ func CastSAU(u Unit) *SwitchActuatorUnit {
 	if typeSave, ok := u.(*SwitchActuatorUnit); ok {
 		return typeSave
 	}
-	logf("CastSAU: wrong unit type %T\n", u)
+	log.Printf("CastSAU: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -64,9 +65,9 @@ func (sau *SwitchActuatorUnit) String() string {
 	return fmt.Sprintf("%s %s: %s%s", sau.prtUnitHead(), name, on, force)
 }
 
-func switchActuatorFactory(deviceId string, device *Device, channelId string) Unit {
+func switchActuatorFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	sau := SwitchActuatorUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeSwitchActuator),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeSwitchActuator),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"math"
 )
 
@@ -21,7 +22,7 @@ func CastDAU(u Unit) *DimmingActuatorUnit {
 	if typeSave, ok := u.(*DimmingActuatorUnit); ok {
 		return typeSave
 	}
-	logf("CastDAU: wrong unit type %T\n", u)
+	log.Printf("CastDAU: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -44,7 +45,7 @@ func (dau *DimmingActuatorUnit) updateUnitFromOutDatapoint(outPut *InOutPut) boo
 			changed = true
 		}
 	case 0x0110: // AL_INFO_ACTUAL_DIMMING_VALUE
-		dimmingValue, ok := intValue(outPut)
+		dimmingValue, ok := dau.intValue(outPut)
 		if !ok {
 			return false
 		}
@@ -77,9 +78,9 @@ func (dau *DimmingActuatorUnit) String() string {
 	return fmt.Sprintf("%s %s: %s %2d%%%s", dau.prtUnitHead(), dau.DisplayName(), on, dau.DimmingValue, force)
 }
 
-func dimmingActuatorFactory(deviceId string, device *Device, channelId string) Unit {
+func dimmingActuatorFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	dau := DimmingActuatorUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeDimmingActuator),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeDimmingActuator),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {

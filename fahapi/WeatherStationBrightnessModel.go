@@ -2,6 +2,7 @@ package fahapi
 
 import (
 	"fmt"
+	"log"
 	"math"
 )
 
@@ -21,7 +22,7 @@ func CastWSB(u Unit) *WeatherStationBrightnessUnit {
 	if typeSave, ok := u.(*WeatherStationBrightnessUnit); ok {
 		return typeSave
 	}
-	logf("CastWSB: wrong unit type %T\n", u)
+	log.Printf("CastWSB: wrong unit type %T\n", u)
 	return nil
 }
 
@@ -47,7 +48,7 @@ func (ws *WeatherStationBrightnessUnit) updateUnitFromOutDatapoint(outPut *InOut
 			changed = true
 		}
 	case 0x0403: // AL_BRIGHTNESS_LEVEL
-		luminance, ok := floatValue(outPut)
+		luminance, ok := ws.floatValue(outPut)
 		if !ok {
 			return false
 		}
@@ -67,9 +68,9 @@ func (ws *WeatherStationBrightnessUnit) resetChanged() {
 	ws.LuminanceAlarmSet = false
 }
 
-func weatherStationBrightnessFactory(deviceId string, device *Device, channelId string) Unit {
+func weatherStationBrightnessFactory(c *Client, deviceId string, device *Device, channelId string) Unit {
 	ws := WeatherStationBrightnessUnit{
-		UnitData: unitDataFactory(deviceId, channelId, UntTypeWeatherStationBrightness),
+		UnitData: c.unitDataFactory(deviceId, channelId, UntTypeWeatherStationBrightness),
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
