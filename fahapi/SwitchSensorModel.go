@@ -67,7 +67,7 @@ func (ssu *SwitchSensorUnit) String() string {
 	if ssu.On {
 		on = "ON "
 	}
-	return fmt.Sprintf("%s %s: %s ", ssu.prtUnitHead(), *ssu.GetChannel().DisplayName, on)
+	return fmt.Sprintf("%s %s: %s ", ssu.prtUnitHead(), ssu.DisplayName(), on)
 }
 
 func switchSensorFactory(deviceId string, device *Device, channelId string) Unit {
@@ -76,7 +76,7 @@ func switchSensorFactory(deviceId string, device *Device, channelId string) Unit
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		wds.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&wds, inOut)
 	}
 
 	return &wds

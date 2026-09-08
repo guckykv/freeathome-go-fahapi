@@ -31,6 +31,34 @@ type Unit interface {
 	resetChanged()
 }
 
+// Str dereferences an optional string of the API model. Almost every field the
+// SysAP returns is a pointer that may be absent, so consumers need this too.
+func Str(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+// DisplayName is the name of the unit's channel, or "" when the channel or its
+// name is missing.
+func (u *UnitData) DisplayName() string {
+	if ch := u.GetChannel(); ch != nil {
+		return Str(ch.DisplayName)
+	}
+	return ""
+}
+
+// applyOutput feeds one output datapoint into a unit. It absorbs the optional
+// fields of the API model in one place, so no unit implementation has to guard
+// against them and new device types inherit the checks.
+func applyOutput(u Unit, out *InOutPut) bool {
+	if u == nil || out == nil || out.PairingID == nil || out.Value == nil {
+		return false
+	}
+	return u.updateUnitFromOutDatapoint(out)
+}
+
 func (u *UnitData) GetChannel() *Channel {
 	if channel, ok := u.Device.Channels[u.ChannelId]; ok {
 		return channel
@@ -112,6 +140,10 @@ func GetFloorRoom(device *Device, channel *Channel) (string, string) {
 	var floor, room string
 	var floorId, roomId string
 
+	if device == nil || channel == nil {
+		return "", ""
+	}
+
 	if channel.Floor != nil {
 		floorId = *channel.Floor
 	} else {
@@ -121,9 +153,11 @@ func GetFloorRoom(device *Device, channel *Channel) (string, string) {
 			return "", ""
 		}
 	}
+	// The room may be missing on both channel and device even though a floor is
+	// set; leave it empty rather than dereferencing nil.
 	if channel.Room != nil {
 		roomId = *channel.Room
-	} else {
+	} else if device.Room != nil {
 		roomId = *device.Room
 	}
 
@@ -204,7 +238,7 @@ func reHydrateUnitValue(deviceId string, channelId string, newData *InOutPut) (s
 		//fmt.Printf("reHydrateUnitValue: no unit found for key %s.\n", key)
 		return "", false
 	}
-	changed := unit.updateUnitFromOutDatapoint(newData)
+	changed := applyOutput(unit, newData)
 	if changed {
 		unit.GetUnitData().LastUpdate = time.Now()
 	}
@@ -227,7 +261,14 @@ func hydrateDevice(deviceId string, device *Device) []string {
 }
 
 func hydrateChannel(deviceId string, device *Device, channelId string) Unit {
-	switch FunctionIdType(*device.Channels[channelId].FunctionID) {
+	channel := device.Channels[channelId]
+	if channel == nil || channel.FunctionID == nil {
+		// Channels without a functionID exist on real hardware and are simply
+		// not tracked.
+		return nil
+	}
+
+	switch FunctionIdType(*channel.FunctionID) {
 	case FID_SWITCH_SENSOR:
 		return switchSensorFactory(deviceId, device, channelId)
 

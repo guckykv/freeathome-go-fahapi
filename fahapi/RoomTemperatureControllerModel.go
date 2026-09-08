@@ -118,7 +118,7 @@ func roomTemperatureControllerFactory(deviceId string, device *Device, channelId
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		rtc.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&rtc, inOut)
 	}
 
 	return &rtc

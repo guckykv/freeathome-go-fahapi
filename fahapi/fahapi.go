@@ -286,9 +286,13 @@ func GetDatapoint(sysap string, deviceId string, channelId string, datapointId s
 		return "", err
 	}
 	var result ApiRestDatapointSysapSerialGet200ApplicationJsonResponse
-	err = json2.Unmarshal(json, &result)
-	point := result.ZeroSysAp.Values[0]
-	return point, err
+	if err = json2.Unmarshal(json, &result); err != nil {
+		return "", err
+	}
+	if len(result.ZeroSysAp.Values) == 0 {
+		return "", fmt.Errorf("datapoint %s.%s.%s returned no value", deviceId, channelId, datapointId)
+	}
+	return result.ZeroSysAp.Values[0], nil
 }
 
 func GetConfiguration() (*SysAP, error) {

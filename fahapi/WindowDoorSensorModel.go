@@ -65,7 +65,7 @@ func (wds *WindowDoorSensorUnit) String() string {
 	if wds.Open {
 		open = "auf"
 	}
-	return fmt.Sprintf("%s %s: %s", wds.prtUnitHead(), *wds.GetChannel().DisplayName, open)
+	return fmt.Sprintf("%s %s: %s", wds.prtUnitHead(), wds.DisplayName(), open)
 }
 
 func windowDoorSensorFactory(deviceId string, device *Device, channelId string) Unit {
@@ -74,7 +74,7 @@ func windowDoorSensorFactory(deviceId string, device *Device, channelId string) 
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		wds.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&wds, inOut)
 	}
 
 	return &wds

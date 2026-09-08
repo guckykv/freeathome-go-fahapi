@@ -67,7 +67,7 @@ func (dsu *DimmingSensorUnit) String() string {
 	if dsu.On {
 		on = "ON "
 	}
-	return fmt.Sprintf("%s %s: %s ", dsu.prtUnitHead(), *dsu.GetChannel().DisplayName, on)
+	return fmt.Sprintf("%s %s: %s ", dsu.prtUnitHead(), dsu.DisplayName(), on)
 }
 
 func dimmingSensorFactory(deviceId string, device *Device, channelId string) Unit {
@@ -76,7 +76,7 @@ func dimmingSensorFactory(deviceId string, device *Device, channelId string) Uni
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		dsu.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&dsu, inOut)
 	}
 
 	return &dsu

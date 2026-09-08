@@ -72,7 +72,7 @@ func (dau *DimmingActuatorUnit) String() string {
 	if dau.Force {
 		force = " (forced)"
 	}
-	return fmt.Sprintf("%s %s: %s %2d%%%s", dau.prtUnitHead(), *dau.GetChannel().DisplayName, on, dau.DimmingValue, force)
+	return fmt.Sprintf("%s %s: %s %2d%%%s", dau.prtUnitHead(), dau.DisplayName(), on, dau.DimmingValue, force)
 }
 
 func dimmingActuatorFactory(deviceId string, device *Device, channelId string) Unit {
@@ -81,7 +81,7 @@ func dimmingActuatorFactory(deviceId string, device *Device, channelId string) U
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		dau.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&dau, inOut)
 	}
 
 	return &dau

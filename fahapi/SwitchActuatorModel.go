@@ -60,7 +60,7 @@ func (sau *SwitchActuatorUnit) String() string {
 	if sau.Force {
 		force = " (forced)"
 	}
-	name := strings.TrimSpace(*sau.GetChannel().DisplayName)
+	name := strings.TrimSpace(sau.DisplayName())
 	return fmt.Sprintf("%s %s: %s%s", sau.prtUnitHead(), name, on, force)
 }
 
@@ -70,7 +70,7 @@ func switchActuatorFactory(deviceId string, device *Device, channelId string) Un
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		sau.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&sau, inOut)
 	}
 
 	return &sau

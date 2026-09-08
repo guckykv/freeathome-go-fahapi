@@ -77,7 +77,7 @@ func weatherStationWindFactory(deviceId string, device *Device, channelId string
 	}
 
 	for _, inOut := range device.Channels[channelId].Outputs {
-		ws.updateUnitFromOutDatapoint(inOut)
+		applyOutput(&ws, inOut)
 	}
 
 	return &ws
