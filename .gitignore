@@ -1,7 +1,17 @@
-# Created by .ignore support plugin (hsz.mobi)
-.idea
+### Zugangsdaten – niemals committen
+# Greift in jedem Verzeichnis, egal wo die Config abgelegt wird.
+.fahapi-config*.json
+!.fahapi-config-TEMPLATE.json
+*.local.json
+.env
+.env.*
 
-### Go template
+### IDE
+.idea/
+.vscode/
+*.iml
+
+### Go
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -12,9 +22,19 @@
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# Output of the go coverage tool
 *.out
+coverage.*
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
 
+### macOS
+.DS_Store
+
+CLAUDE.md
+
+### Arbeitsdokumente – nicht committen
+REFACTORING-PLAN.md
+go.work
+go.work.sum
