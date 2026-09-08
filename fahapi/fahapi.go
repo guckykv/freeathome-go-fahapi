@@ -6,9 +6,10 @@ import (
 	json2 "encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 )
 
 // see https://developer.eu.mybuildings.abb.com/fah_local/reference/functionids/
@@ -199,6 +200,10 @@ type apiConfiguration struct {
 
 var apiConfig = apiConfiguration{}
 
+// httpClient is shared so connections are reused. Without a timeout a
+// unresponsive SysAP would block a call forever.
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
 func ConfigureApi(
 	host string,
 	username string,
@@ -209,7 +214,7 @@ func ConfigureApi(
 	logLevelParam int,
 ) {
 	apiConfig.Host = host
-	apiConfig.Authentication = "Basic: " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+	apiConfig.Authentication = "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
 	wsUpdateUnitCallback = callbackUnit
 	wsUpdateMessageCallback = callbackMessage
 	logger = loggerParam
@@ -326,8 +331,10 @@ func PutVirtualDevice(sysap, serial string, message *VirtualDevice) (virtualSeri
 }
 
 func loadUrl(httpUrl string) ([]byte, error) {
-	client := &http.Client{}
-	req, _ := http.NewRequest("GET", httpUrl, nil)
+	req, err := http.NewRequest(http.MethodGet, httpUrl, nil)
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("accept", "application/json")
 	req.Header.Set("Authorization", apiConfig.Authentication)
 
@@ -335,41 +342,49 @@ func loadUrl(httpUrl string) ([]byte, error) {
 		logger.Printf("getting %s ...\n", httpUrl)
 	}
 
-	var json []byte
-
-	response, err := client.Do(req)
+	response, err := httpClient.Do(req)
 	if err != nil {
 		logger.Printf("error getting %s: %s\n", httpUrl, err.Error())
 		return nil, err
 	}
-	if response.StatusCode != 200 {
-		return nil, fmt.Errorf("GET url %s returned code %d (%s)", httpUrl, response.StatusCode, response.Status)
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET url %s returned code %d (%s): %s",
+			httpUrl, response.StatusCode, response.Status, errorBody(response.Body))
 	}
 
-	json, err = ioutil.ReadAll(response.Body)
-
-	return json, err
+	return io.ReadAll(response.Body)
 }
 
 func putRequest(url string, data io.Reader) ([]byte, error) {
-	client := &http.Client{}
 	req, err := http.NewRequest(http.MethodPut, url, data)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Authorization", apiConfig.Authentication)
-	var response *http.Response
-	response, err = client.Do(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	response, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
+	defer response.Body.Close()
 
-	if response.StatusCode != 200 {
-		return nil, fmt.Errorf("PUT url %s returned code %d (%s)", url, response.StatusCode, response.Status)
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("PUT url %s returned code %d (%s): %s",
+			url, response.StatusCode, response.Status, errorBody(response.Body))
 	}
 
-	var body []byte
-	body, err = ioutil.ReadAll(response.Body)
+	return io.ReadAll(response.Body)
+}
 
-	return body, err
+// errorBody reads the response body of a failed request so the reason can be
+// part of the error. The SysAP puts usable diagnostics there.
+func errorBody(body io.Reader) string {
+	b, err := io.ReadAll(io.LimitReader(body, 2048))
+	if err != nil || len(b) == 0 {
+		return "<no body>"
+	}
+	return strings.TrimSpace(string(b))
 }
