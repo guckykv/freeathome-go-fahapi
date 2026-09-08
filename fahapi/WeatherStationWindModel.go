@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"strconv"
 )
 
 type WeatherStationWindUnit struct {
@@ -47,14 +46,20 @@ func (ws *WeatherStationWindUnit) updateUnitFromOutDatapoint(outPut *InOutPut) b
 			changed = true
 		}
 	case 0x0401: // AL_WIND_FORCE
-		windForce, _ := strconv.ParseFloat(*outPut.Value, 64)
+		windForce, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if windForce != ws.WindForce {
 			ws.WindForce = windForce
 			ws.WindForceSet = true
 			changed = true
 		}
 	case 0x0404: // AL_WIND_SPEED
-		wind, _ := strconv.ParseFloat(*outPut.Value, 64)
+		wind, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if wind != ws.Wind {
 			ws.Wind = wind
 			ws.WindSet = true

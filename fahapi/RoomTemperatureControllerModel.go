@@ -2,7 +2,6 @@ package fahapi
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -32,7 +31,10 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 	changed := false
 	switch *outPut.PairingID {
 	case 0x0030: // AL_ACTUATING_VALUE_HEATING (Determines the through flow volume of the control valve)
-		capacity, _ := strconv.Atoi(*outPut.Value)
+		capacity, ok := intValue(outPut)
+		if !ok {
+			return false
+		}
 		if capacity != rtc.Capacity {
 			rtc.Capacity = capacity
 			rtc.CapacitySet = true
@@ -42,7 +44,10 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 	case 0x0031: // AL_FAN_COIL_LEVEL
 	case 0x0032: // AL_ACTUATING_VALUE_COOLING (Determines the through flow volume of the control valve)
 	case 0x0033: // AL_SET_POINT_TEMPERATURE (Defines the displayed set point Temperature of the system)
-		target, _ := strconv.ParseFloat(*outPut.Value, 64)
+		target, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if target != rtc.TargetDegree {
 			rtc.TargetDegree = target
 			rtc.TargetDegreeSet = true
@@ -64,7 +69,10 @@ func (rtc *RoomTemperatureControllerUnit) updateUnitFromOutDatapoint(outPut *InO
 			logf("room temperature controller %s: device error %s\n", rtc.getUnitMapKey(), *outPut.Value)
 		}
 	case 0x0130: // AL_MEASURED_TEMPERATURE
-		actual, _ := strconv.ParseFloat(*outPut.Value, 64)
+		actual, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if actual != rtc.ActualDegree {
 			rtc.ActualDegree = actual
 			rtc.ActualDegreeSet = true

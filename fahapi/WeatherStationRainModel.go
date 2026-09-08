@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"math"
-	"strconv"
 )
 
 const rainLevel = 2 // rain percentage change has to be bigger than that
@@ -48,7 +47,10 @@ func (ws *WeatherStationRainUnit) updateUnitFromOutDatapoint(outPut *InOutPut) b
 			changed = true
 		}
 	case 0x0405: // AL_RAIN_SENSOR_ACTIVATION_PERCENTAGE
-		rainPercentage, _ := strconv.Atoi(*outPut.Value)
+		rainPercentage, ok := intValue(outPut)
+		if !ok {
+			return false
+		}
 		if math.Abs(float64(ws.RainPercentage-rainPercentage)) > rainLevel {
 			ws.RainPercentage = rainPercentage
 			ws.RainPercentageSet = true

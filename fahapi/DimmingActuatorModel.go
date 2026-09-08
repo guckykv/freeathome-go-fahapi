@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"math"
-	"strconv"
 )
 
 type DimmingActuatorUnit struct {
@@ -45,7 +44,10 @@ func (dau *DimmingActuatorUnit) updateUnitFromOutDatapoint(outPut *InOutPut) boo
 			changed = true
 		}
 	case 0x0110: // AL_INFO_ACTUAL_DIMMING_VALUE
-		dimmingValue, _ := strconv.Atoi(*outPut.Value)
+		dimmingValue, ok := intValue(outPut)
+		if !ok {
+			return false
+		}
 		if math.Abs(float64(dau.DimmingValue-dimmingValue)) >= 1 {
 			dau.DimmingValue = dimmingValue
 			dau.DimmingValueSet = true

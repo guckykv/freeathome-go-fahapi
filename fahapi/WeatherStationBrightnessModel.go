@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"math"
-	"strconv"
 )
 
 const luminanceLevel = 0.02 // change has to be bigger than that: logarithm change of lux
@@ -48,7 +47,10 @@ func (ws *WeatherStationBrightnessUnit) updateUnitFromOutDatapoint(outPut *InOut
 			changed = true
 		}
 	case 0x0403: // AL_BRIGHTNESS_LEVEL
-		luminance, _ := strconv.ParseFloat(*outPut.Value, 64)
+		luminance, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if math.Abs(math.Log(ws.Luminance)-math.Log(luminance)) >= luminanceLevel && luminance != 0.0 {
 			ws.Luminance = luminance
 			ws.LuminanceSet = true

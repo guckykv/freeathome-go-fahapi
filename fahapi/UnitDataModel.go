@@ -3,6 +3,7 @@ package fahapi
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 )
 
@@ -47,6 +48,31 @@ func (u *UnitData) DisplayName() string {
 		return Str(ch.DisplayName)
 	}
 	return ""
+}
+
+// floatValue and intValue parse a datapoint value. A malformed value is
+// reported and rejected rather than silently becoming 0, which would otherwise
+// be passed on as a genuine measurement.
+func floatValue(out *InOutPut) (float64, bool) {
+	v, err := strconv.ParseFloat(*out.Value, 64)
+	if err != nil {
+		if logLevel > 1 {
+			logf("warning: pairingID 0x%04x: %q is not a number, ignored\n", *out.PairingID, *out.Value)
+		}
+		return 0, false
+	}
+	return v, true
+}
+
+func intValue(out *InOutPut) (int, bool) {
+	v, err := strconv.Atoi(*out.Value)
+	if err != nil {
+		if logLevel > 1 {
+			logf("warning: pairingID 0x%04x: %q is not an integer, ignored\n", *out.PairingID, *out.Value)
+		}
+		return 0, false
+	}
+	return v, true
 }
 
 // applyOutput feeds one output datapoint into a unit. It absorbs the optional

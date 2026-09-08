@@ -3,7 +3,6 @@ package fahapi
 import (
 	"fmt"
 	"math"
-	"strconv"
 )
 
 // change has to be bigger than that
@@ -50,15 +49,17 @@ func (ws *WeatherStationTemperatureUnit) updateUnitFromOutDatapoint(outPut *InOu
 			changed = true
 		}
 	case 0x0400: // AL_OUTDOOR_TEMPERATURE
-		temperature, _ := strconv.ParseFloat(*outPut.Value, 64)
+		// The former "implausible jump to 0 °C" guard sat here. Those zeros came
+		// from ParseFloat failing on a malformed value, not from the sensor;
+		// floatValue rejects them at the source now.
+		temperature, ok := floatValue(outPut)
+		if !ok {
+			return false
+		}
 		if math.Abs(ws.Temperature-temperature) >= temperatureLevel {
-			if temperature == 0.0 && math.Abs(ws.Temperature) > 5.0 {
-				logf("Unplausible temp change: from %.2f°C to 0°C. Ignored.\n", ws.Temperature)
-			} else {
-				ws.Temperature = temperature
-				ws.TemperatureSet = true
-				changed = true
-			}
+			ws.Temperature = temperature
+			ws.TemperatureSet = true
+			changed = true
 		}
 	}
 
