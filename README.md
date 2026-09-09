@@ -50,6 +50,13 @@ See [fahcli](https://github.com/guckykv/freeathome-go-tools/cmd/fahcli).
   PUT call for creating virtual devices is implemented. And the standard Unit logging now shows the NativeId too.
   The fhapi also supports, that new devices show up while the websocket loop already runs.
 
+* **Never send a text frame on the websocket.** Measured against a System Access Point
+  (software 2.6): a single text frame closes not just the sender's connection but *every*
+  websocket client connected to the SysAP, and its websocket service then needs a few
+  seconds before it accepts new connections. Use ping frames as a keepalive, which the
+  SysAP answers reliably. Eight simultaneous clients were served without trouble, so the
+  number of connections is not the constraint -- the frame type is.
+
 * `StartWebSocketLoop` takes a `context.Context` as its first argument. Cancel it to shut
   down; the library no longer installs signal handlers of its own. Use
   `fahapi.TreatAllUnitsAsUpdated(true)` for the full flush that used to be bound to SIGHUP.

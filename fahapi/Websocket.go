@@ -23,9 +23,11 @@ var (
 const (
 	writeWait = 10 * time.Second
 
-	// DefaultDialer would wait 45s for a handshake, which delays noticing a
-	// blackholed host far longer than necessary.
-	handshakeTimeout = 10 * time.Second
+	// A handshake takes 0.1-0.3s from an idle SysAP, but up to 10s while it is
+	// recovering from a disrupted websocket service -- exactly when reconnecting
+	// matters. Measured against hardware. DefaultDialer's 45s would delay
+	// noticing a blackholed host far longer than necessary.
+	handshakeTimeout = 30 * time.Second
 
 	reconnectMin = 1 * time.Second
 	reconnectMax = 60 * time.Second
