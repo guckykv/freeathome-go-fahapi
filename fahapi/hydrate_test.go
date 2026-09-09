@@ -1,6 +1,11 @@
 package fahapi
 
-import "testing"
+import (
+	"bytes"
+	"log"
+	"strings"
+	"testing"
+)
 
 // testSysAP builds a small installation: one switch actuator with a floor and
 // room, one channel without a functionID, and one device that has a floor but
@@ -17,6 +22,9 @@ func testSysAP() *SysAP {
 					"ch0000": {
 						DisplayName: ptr("Ceiling light"),
 						FunctionID:  ptr(string(FID_SWITCH_ACTUATOR)),
+						Inputs: map[string]*InOutPut{
+							"idp0000": out(0x0001, "1"),
+						},
 						Outputs: map[string]*InOutPut{
 							"odp0000": out(0x0100, "1"),
 						},
@@ -151,5 +159,33 @@ func TestMalformedDatapointKeyIsSkipped(t *testing.T) {
 
 	if sau := CastSAU(c.getUnit("DEV1", "ch0000")); sau.On {
 		t.Error("the valid datapoint next to the malformed one was not applied")
+	}
+}
+
+// The SysAP reports input datapoints too. They carry no state this model
+// tracks, so they must be skipped quietly -- a warning for every keypress makes
+// log level 2 useless for diagnosis. A datapoint that is neither an input nor
+// an output is still worth reporting.
+func TestInputDatapointsDoNotWarn(t *testing.T) {
+	var logged bytes.Buffer
+
+	c := hydrateTestSysAP(t)
+	c.logger = log.New(&logged, "", 0)
+	c.logLevel = 2
+
+	var msg WebsocketMessage
+	msg.ZeroSysAp.Datapoints = map[string]string{"DEV1/ch0000/idp0000": "1"}
+	c.processWebsocketMessage(msg)
+
+	if strings.Contains(logged.String(), "idp0000") {
+		t.Errorf("known input datapoint produced a warning:\n%s", logged.String())
+	}
+
+	logged.Reset()
+	msg.ZeroSysAp.Datapoints = map[string]string{"DEV1/ch0000/xyz9999": "1"}
+	c.processWebsocketMessage(msg)
+
+	if !strings.Contains(logged.String(), "xyz9999") {
+		t.Errorf("unknown datapoint produced no warning:\n%s", logged.String())
 	}
 }

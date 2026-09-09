@@ -207,8 +207,12 @@ func (c *Client) updateDevices(message WebsocketMessage) []string {
 			continue
 		}
 		if outPoint, ok = channel.Outputs[outDatapointId]; !ok {
-			if c.logLevel > 1 {
-				c.logf("warning: [updateDevices] No out datapoint %s for device %s and channel %s\n", outDatapointId, deviceId, channelId)
+			// The SysAP reports input datapoints as well. Only outputs carry the
+			// state this model tracks, so a known input is expected here and not
+			// worth a warning -- otherwise every keypress produces one.
+			if _, isInput := channel.Inputs[outDatapointId]; !isInput && c.logLevel > 1 {
+				c.logf("warning: [updateDevices] datapoint %s of device %s channel %s is neither an input nor an output\n",
+					outDatapointId, deviceId, channelId)
 			}
 			continue
 		}
