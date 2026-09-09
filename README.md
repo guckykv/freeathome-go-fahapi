@@ -22,8 +22,16 @@ Currently supported Device Types (FunctionIDs):
 * FID_WIND_SENSOR                                    
 
 You can use a CallBack function to get a message for all updates (for the supported types).
+Virtual devices can be created via `PutVirtualDevice`, and devices appearing while the
+websocket loop runs are picked up automatically.
 
 For examples how to use the package look into `fahinflux` and `fahcli`.
+
+Create a client with `New`, load the model with `ReadAndHydrateAllDevices`, then run
+`StartWebSocketLoop`. Cancel its context to shut down — the library installs no signal
+handlers, that is the application's business. `TreatAllUnitsAsUpdated` forces a full
+flush, e.g. on SIGHUP. The connection is kept alive with websocket pings and
+re-established with a backoff when it drops.
 
 ## Example Usages of this package
 
@@ -46,22 +54,16 @@ See [fahcli](https://github.com/guckykv/freeathome-go-tools/cmd/fahcli).
 * Works only with SysAP ID `00000000-0000-0000-0000-000000000000`. 
   So probably it doesn't work, if you have more than one SysAP.
   
-* ~~VirtualDevices not yet implemented.~~
-  PUT call for creating virtual devices is implemented. And the standard Unit logging now shows the NativeId too.
-  The fhapi also supports, that new devices show up while the websocket loop already runs.
+* **Never send a text frame on the websocket.** A single text frame closes *every*
+  websocket client of the SysAP, not just the sender, and its websocket service then
+  needs a few seconds before it accepts new connections. Use ping frames, which the SysAP
+  answers reliably. The number of clients is not a constraint — eight at once are served
+  without trouble. Measured with
+  [sysapprobe](https://github.com/guckykv/freeathome-go-tools/tree/main/cmd/sysapprobe).
 
-* **Never send a text frame on the websocket.** Measured against a System Access Point
-  (software 2.6): a single text frame closes not just the sender's connection but *every*
-  websocket client connected to the SysAP, and its websocket service then needs a few
-  seconds before it accepts new connections. Use ping frames as a keepalive, which the
-  SysAP answers reliably. Eight simultaneous clients were served without trouble, so the
-  number of connections is not the constraint -- the frame type is.
-
-* `StartWebSocketLoop` takes a `context.Context` as its first argument. Cancel it to shut
-  down; the library no longer installs signal handlers of its own. Use
-  `fahapi.TreatAllUnitsAsUpdated(true)` for the full flush that used to be bound to SIGHUP.
-  The connection is kept alive with websocket pings and re-established with a backoff when
-  it drops.
+* Reading a unit's fields from another goroutine is a data race. Read them in a callback,
+  which runs in the websocket loop's goroutine. `Unit`, `Units`, `Device` and
+  `Configuration` are safe from anywhere.
 
 * No writing possibilities via the `UnitModel` data structure.
   If you want to change a value, you have to use `fahapi.PutDatapoint(sysapId, deviceId, channelId, datapointId, value)`.
