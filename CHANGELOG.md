@@ -2,6 +2,9 @@
 
 ## Fixed
 
+* Window/door sensors were never hydrated on current SysAP firmware: it reports their
+  `functionID` as `F`, the library only matched `f`. Function IDs are now compared
+  case-insensitively (the SysAP even mixes `1a` and `5A` in one configuration).
 * The `Authorization` header was sent as `Basic: <credentials>`. Current SysAP firmware
   answers **401 to every request**, so the library did not work at all.
 * The websocket keepalive sent a text frame every second. A text frame disconnects *every*

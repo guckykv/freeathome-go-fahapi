@@ -5,6 +5,7 @@ import (
 	"log"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -327,7 +328,10 @@ func (c *Client) hydrateChannel(deviceId string, device *Device, channelId strin
 		return nil
 	}
 
-	switch FunctionIdType(*channel.FunctionID) {
+	// Function IDs are hex, and the SysAP does not keep one letter case: current
+	// firmware reports window/door sensors as "F", older firmware as "f", and
+	// even mixes cases within one configuration ("1a" next to "5A").
+	switch FunctionIdType(strings.ToLower(*channel.FunctionID)) {
 	case FID_SWITCH_SENSOR:
 		return switchSensorFactory(c, deviceId, device, channelId)
 

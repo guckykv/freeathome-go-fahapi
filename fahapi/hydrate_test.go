@@ -119,6 +119,24 @@ func TestDeviceWithFloorButNoRoom(t *testing.T) {
 	}
 }
 
+// Current SysAP firmware reports window/door sensors with functionID "F";
+// matching only "f" silently dropped every one of them.
+func TestFunctionIDMatchesInAnyCase(t *testing.T) {
+	c := testClient(t)
+	c.configuration = testSysAP()
+	c.configuration.Devices["DEV2"].Channels["ch0000"].FunctionID = ptr("F")
+	c.devices = c.configuration.Devices
+	c.hydrateAllDevices()
+
+	wds := CastWDS(c.getUnit("DEV2", "ch0000"))
+	if wds == nil {
+		t.Fatal(`functionID "F" was not recognised as a window/door sensor`)
+	}
+	if !wds.Open {
+		t.Error("window/door sensor state not taken from its output")
+	}
+}
+
 func TestCastToWrongTypeReturnsNil(t *testing.T) {
 	c := hydrateTestSysAP(t)
 
